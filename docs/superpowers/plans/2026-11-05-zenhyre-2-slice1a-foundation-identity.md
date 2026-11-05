@@ -30,17 +30,16 @@ zenhyre-2/
   packages/db/
     package.json
     drizzle.config.ts
-    src/index.ts               createDb(), Db type, withTx()
+    src/index.ts               createDb(), Db / DbOrTx types
+    src/migrate.ts             applies drizzle/ migrations to DATABASE_URL
+    src/seed.ts                (Task 13) the 23 campuses
     src/schema/index.ts        re-exports
     src/schema/identity.ts     campus, user, user_email, magic_link_token, session, candidate, company, company_user, association, association_admin
-    src/schema/roles.ts        role, role_event, role_gate_decision, referral, referral_attribution
-    src/schema/matching.ts     match, match_event
-    src/schema/ledger.ts       ledger_entry
-    src/schema/trust.ts        trust_event, trust_score
     src/schema/ops.ts          review_item, config_value, staff_action
     src/schema/notify.ts       notification
-    src/test/setup.ts          per-test-file DB reset helper
+    src/test/setup.ts          database-per-test-file helper
     drizzle/                   generated migrations
+    (roles, matching, ledger, trust schema files arrive with Plans 1B / 2 / 3)
   packages/shared/
     package.json
     src/index.ts
@@ -74,6 +73,7 @@ zenhyre-2/
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
+    "test:pkg": "turbo run test --filter",
     "db:generate": "pnpm --filter @zenhyre/db generate",
     "db:migrate": "pnpm --filter @zenhyre/db migrate",
     "test:db:start": "bash scripts/test-db.sh start",
@@ -84,7 +84,8 @@ zenhyre-2/
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
     "@types/node": "^22.0.0"
-  }
+  },
+  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
 }
 ```
 
@@ -147,13 +148,15 @@ dist
 ```
 DATABASE_URL=postgres://zenhyre:zenhyre@localhost:5433/zenhyre
 RESEND_API_KEY=
+RESEND_WEBHOOK_SECRET=
 APP_BASE_URL=http://localhost:3000
+TURBO_TELEMETRY_DISABLED=1
 ```
 
 - [ ] **Step 3: Install and verify**
 
-Run: `cd /home/claude/zenhyre-2 && pnpm install`
-Expected: lockfile created, no errors.
+Run: `cd /home/claude/zenhyre-2 && export TURBO_TELEMETRY_DISABLED=1 && pnpm install`
+Expected: lockfile created, no errors. (Turbo's telemetry endpoint is blocked by the egress proxy; the variable keeps it quiet.)
 
 - [ ] **Step 4: Commit**
 
@@ -171,24 +174,30 @@ git add -A && git commit -m "chore: monorepo scaffold"
 ```bash
 #!/usr/bin/env bash
 # Starts/stops a throwaway Postgres 16 cluster on port 5433 for tests.
+# Postgres refuses to run as root, so when invoked as root the server runs as the `postgres` system user.
 set -euo pipefail
 PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}
-DIR="$(cd "$(dirname "$0")/.." && pwd)/.test-pg"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIR="$ROOT/.test-pg"
+DATA="$DIR/data"
 PORT=5433
+if [ "$(id -u)" = "0" ]; then AS="runuser -u postgres --"; else AS=""; fi
 case "${1:-}" in
   start)
-    if [ ! -d "$DIR" ]; then
-      "$PGBIN/initdb" -D "$DIR" -U zenhyre --auth=trust -q
-      echo "port = $PORT" >> "$DIR/postgresql.conf"
-      echo "unix_socket_directories = '$DIR'" >> "$DIR/postgresql.conf"
+    mkdir -p "$DIR"
+    [ -n "$AS" ] && chown postgres "$DIR"
+    if [ ! -d "$DATA" ]; then
+      $AS "$PGBIN/initdb" -D "$DATA" -U zenhyre --auth=trust >/dev/null
+      echo "port = $PORT" >> "$DATA/postgresql.conf"
+      echo "unix_socket_directories = '$DIR'" >> "$DATA/postgresql.conf"
     fi
-    "$PGBIN/pg_ctl" -D "$DIR" -l "$DIR/log" -w start
+    $AS "$PGBIN/pg_ctl" -D "$DATA" status >/dev/null 2>&1 || $AS "$PGBIN/pg_ctl" -D "$DATA" -l "$DIR/log" -w start >/dev/null
     "$PGBIN/psql" -h localhost -p $PORT -U zenhyre -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='zenhyre'" | grep -q 1 \
       || "$PGBIN/createdb" -h localhost -p $PORT -U zenhyre zenhyre
     echo "DATABASE_URL=postgres://zenhyre:zenhyre@localhost:$PORT/zenhyre"
     ;;
   stop)
-    "$PGBIN/pg_ctl" -D "$DIR" -w stop || true
+    $AS "$PGBIN/pg_ctl" -D "$DATA" -w stop >/dev/null || true
     ;;
   *) echo "usage: $0 start|stop"; exit 1;;
 esac
@@ -196,8 +205,10 @@ esac
 
 - [ ] **Step 2: Run it**
 
-Run: `chmod +x scripts/test-db.sh && pnpm test:db:start`
-Expected: last line `DATABASE_URL=postgres://zenhyre:zenhyre@localhost:5433/zenhyre`.
+Run: `chmod +x scripts/test-db.sh && pnpm test:db:start && pnpm test:db:start`
+Expected: both runs end with `DATABASE_URL=postgres://zenhyre:zenhyre@localhost:5433/zenhyre` (the second proves the script is idempotent).
+
+Then, for every later step in this plan that touches the database: `export DATABASE_URL=postgres://zenhyre:zenhyre@localhost:5433/zenhyre` once in the shell. The test harness also defaults to this URL when the variable is unset.
 
 - [ ] **Step 3: Commit**
 
@@ -267,7 +278,7 @@ describe("money", () => {
 
 - [ ] **Step 3: Run to see it fail**
 
-Run: `pnpm --filter @zenhyre/shared test`
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/shared`
 Expected: FAIL, cannot find module `../src/money`.
 
 - [ ] **Step 4: Implement**
@@ -332,7 +343,7 @@ export * from "./clock";
 
 - [ ] **Step 5: Run tests**
 
-Run: `pnpm install && pnpm --filter @zenhyre/shared test`
+Run: `pnpm turbo run test --filter=@zenhyre/shared`
 Expected: 3 passed.
 
 - [ ] **Step 6: Commit**
@@ -344,7 +355,7 @@ git add packages/shared && git commit -m "feat(shared): money, errors, clock"
 ### Task 4: `packages/db` — client and schema (identity + ops)
 
 **Files:**
-- Create: `packages/db/package.json`, `packages/db/tsconfig.json`, `packages/db/vitest.config.ts`, `packages/db/drizzle.config.ts`, `packages/db/src/index.ts`, `packages/db/src/schema/index.ts`, `packages/db/src/schema/identity.ts`, `packages/db/src/schema/ops.ts`, `packages/db/src/schema/notify.ts`, `packages/db/src/test/setup.ts`
+- Create: `packages/db/package.json`, `packages/db/tsconfig.json`, `packages/db/vitest.config.ts`, `packages/db/drizzle.config.ts`, `packages/db/src/index.ts`, `packages/db/src/migrate.ts`, `packages/db/src/schema/index.ts`, `packages/db/src/schema/identity.ts`, `packages/db/src/schema/ops.ts`, `packages/db/src/schema/notify.ts`, `packages/db/src/test/setup.ts`
 - Test: `packages/db/test/schema.test.ts`
 
 - [ ] **Step 1: Package files**
@@ -384,8 +395,16 @@ git add packages/shared && git commit -m "feat(shared): money, errors, clock"
 }
 ```
 
-`packages/db/tsconfig.json`: same shape as shared.
-`packages/db/vitest.config.ts`: same as shared.
+`packages/db/tsconfig.json`:
+```json
+{ "extends": "../../tsconfig.base.json", "compilerOptions": { "outDir": "dist", "rootDir": "src" }, "include": ["src"] }
+```
+`packages/db/vitest.config.ts`:
+```ts
+import { defineConfig } from "vitest/config";
+export default defineConfig({ test: { include: ["test/**/*.test.ts"] } });
+```
+(Every later package uses these two files verbatim, substituting nothing; the API's tsconfig adds `"test"` to `include`.)
 
 `packages/db/drizzle.config.ts`:
 ```ts
@@ -402,7 +421,7 @@ export default defineConfig({
 
 `packages/db/src/schema/identity.ts`:
 ```ts
-import { pgTable, uuid, text, timestamp, boolean, integer, date, jsonb, numeric, uniqueIndex, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, boolean, integer, date, jsonb, numeric, primaryKey, pgEnum } from "drizzle-orm/pg-core";
 
 export const candidateStatus = pgEnum("candidate_status", ["student", "final_year", "alumnus"]);
 export const verificationState = pgEnum("verification_state", ["verified", "referral_pending", "verification_pending", "rejected"]);
@@ -505,7 +524,7 @@ export const companyUser = pgTable("company_user", {
   invitedBy: uuid("invited_by"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
-}, (t) => [uniqueIndex("company_user_pk").on(t.userId, t.companyId)]);
+}, (t) => [primaryKey({ columns: [t.userId, t.companyId] })]);
 
 export const association = pgTable("association", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -522,14 +541,15 @@ export const associationAdmin = pgTable("association_admin", {
   associationId: uuid("association_id").notNull().references(() => association.id),
   invitedBy: uuid("invited_by"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [uniqueIndex("association_admin_pk").on(t.userId, t.associationId)]);
+}, (t) => [primaryKey({ columns: [t.userId, t.associationId] })]);
 ```
 
 - [ ] **Step 3: Ops and notify schema** (§4.6)
 
 `packages/db/src/schema/ops.ts`:
 ```ts
-import { pgTable, uuid, text, timestamp, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const reviewKind = pgEnum("review_kind", ["gate", "verification", "leakage", "join_dispute", "deposit_resolution", "candidate_approval", "alert"]);
 
@@ -544,7 +564,10 @@ export const reviewItem = pgTable("review_item", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   resolvedBy: text("resolved_by"),
   resolution: text("resolution"),
-});
+}, (t) => [
+  // At most one OPEN item per kind+ref; makes openReview's idempotency race-free.
+  uniqueIndex("review_item_open_uq").on(t.kind, t.refType, t.refId).where(sql`resolved_at is null`),
+]);
 
 export const configValue = pgTable("config_value", {
   key: text("key").primaryKey(),
@@ -626,21 +649,27 @@ import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDb, Db } from "../index";
 
-/** Creates a fresh schema per test file so files can run in parallel. */
+const DEFAULT_URL = "postgres://zenhyre:zenhyre@localhost:5433/zenhyre";
+
+/**
+ * Creates a fresh *database* per test file so files can run in parallel.
+ * (Per-schema isolation does not work: drizzle-kit's generated SQL hard-codes `"public".` on enums and FK targets.)
+ */
 export async function testDb(): Promise<{ db: Db; close: () => Promise<void> }> {
   const name = "t_" + Math.random().toString(36).slice(2, 10);
-  const base = createDb();
-  await base.db.execute(sql.raw(`CREATE SCHEMA ${name}`));
-  await base.close();
-  const url = new URL(process.env.DATABASE_URL!);
-  url.searchParams.set("options", `-c search_path=${name}`);
+  const baseUrl = process.env.DATABASE_URL ?? DEFAULT_URL;
+  const admin = createDb(baseUrl);
+  await admin.db.execute(sql.raw(`CREATE DATABASE ${name}`));
+  const url = new URL(baseUrl);
+  url.pathname = `/${name}`;
   const { db, close } = createDb(url.toString());
-  await migrate(db, { migrationsFolder: new URL("../../drizzle", import.meta.url).pathname, migrationsSchema: name });
+  await migrate(db, { migrationsFolder: new URL("../../drizzle", import.meta.url).pathname });
   return {
     db,
     close: async () => {
-      await db.execute(sql.raw(`DROP SCHEMA ${name} CASCADE`));
       await close();
+      await admin.db.execute(sql.raw(`DROP DATABASE ${name}`));
+      await admin.close();
     },
   };
 }
@@ -649,7 +678,7 @@ export async function testDb(): Promise<{ db: Db; close: () => Promise<void> }> 
 - [ ] **Step 5: Generate the migration**
 
 Run: `pnpm install && export DATABASE_URL=postgres://zenhyre:zenhyre@localhost:5433/zenhyre && pnpm db:generate`
-Expected: `packages/db/drizzle/0000_*.sql` created containing `CREATE TABLE "campus"` etc.
+Expected: `packages/db/drizzle/0000_*.sql` created containing `CREATE TABLE "campus"` etc. Hand-written SQL against this schema must quote `"user"` (reserved word); Drizzle does so automatically.
 
 - [ ] **Step 6: Failing schema smoke test**
 
@@ -659,9 +688,9 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { testDb } from "../src/test/setup";
 import { schema, Db } from "../src/index";
 
-let db: Db, close: () => Promise<void>;
+let db: Db, close: (() => Promise<void>) | undefined;
 beforeAll(async () => ({ db, close } = await testDb()));
-afterAll(() => close());
+afterAll(() => close?.());
 
 describe("schema", () => {
   it("inserts a campus and a user with an email", async () => {
@@ -677,8 +706,10 @@ describe("schema", () => {
 
 - [ ] **Step 7: Run test**
 
-Run: `pnpm --filter @zenhyre/db test`
-Expected: 1 passed. (If it fails on `migrationsSchema`, the drizzle version lacks it: fall back to creating a new database per file with `CREATE DATABASE` instead of a schema.)
+Run: `pnpm turbo run test --filter=@zenhyre/db`
+Expected: 1 passed. (Turbo builds `shared` and `db` first because `test` depends on `^build`; plain `pnpm --filter X test` skips that and fails to resolve `@zenhyre/shared`, so use the turbo form throughout.)
+
+Do not regenerate `0000_*.sql` once it has been applied anywhere: drizzle keys migrations by content hash and a regenerated file fails with `type "candidate_status" already exists`. Later schema changes get new migration files.
 
 - [ ] **Step 8: Commit**
 
@@ -692,7 +723,23 @@ git add packages/db && git commit -m "feat(db): drizzle client, identity/ops/not
 - Create: `packages/ops/package.json`, `packages/ops/tsconfig.json`, `packages/ops/vitest.config.ts`, `packages/ops/src/index.ts`, `packages/ops/src/defaults.ts`, `packages/ops/src/config.ts`
 - Test: `packages/ops/test/config.test.ts`
 
-- [ ] **Step 1: Package files** — as for `shared`, name `@zenhyre/ops`, dependencies `@zenhyre/db`, `@zenhyre/shared`, `drizzle-orm`, `zod`.
+- [ ] **Step 1: Package files**
+
+`packages/ops/package.json`:
+```json
+{
+  "name": "@zenhyre/ops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run" },
+  "dependencies": { "@zenhyre/db": "workspace:*", "@zenhyre/shared": "workspace:*", "drizzle-orm": "^0.36.0", "zod": "^3.23.0" },
+  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}
+```
+`tsconfig.json` and `vitest.config.ts`: verbatim copies of the `db` package's files. (`notify` and `identity` in Chunk 2 use the same package.json shape with their own name and dependencies: notify adds `resend`; identity adds nothing beyond `@zenhyre/db`, `@zenhyre/shared`, `drizzle-orm`.)
 
 - [ ] **Step 2: Failing test**
 
@@ -730,8 +777,8 @@ describe("config", () => {
 
 - [ ] **Step 3: Run to see it fail**
 
-Run: `pnpm --filter @zenhyre/ops test`
-Expected: FAIL, `createOps` not found.
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/ops`
+Expected: FAIL, cannot resolve `../src/index`.
 
 - [ ] **Step 4: Implement defaults and config**
 
@@ -785,6 +832,10 @@ export const CONFIG = {
   "trust.overdue_days": { schema: z.number().int().positive(), default: 30 },
   "trust.self_report_days": { schema: z.array(z.number().int()), default: [30, 90] },
   "trust.leakage_lookback_months": { schema: z.number().int().positive(), default: 12 },
+  "trust.weights": { schema: z.record(z.string(), z.number().int()), default: {
+    "company.hire_closed": 5, "company.fee_paid_on_time": 3, "company.shortlist_actioned_promptly": 2, "company.went_dark": -15,
+    "company.fee_overdue": -15, "company.off_platform_hire": -40, "company.appeal_rejected": -10,
+    "candidate.joined": 5, "candidate.self_report_answered": 1, "candidate.interview_no_show": -10, "candidate.offer_reneged": -25, "candidate.profile_false": -50 } },
   "identity.freemail_domains": { schema: z.array(z.string()),
     default: ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "proton.me", "rediffmail.com"] },
   "identity.escape_hatch_days": { schema: z.number().int().positive(), default: 7 },
@@ -839,7 +890,7 @@ export type Ops = ReturnType<typeof createOps>;
 
 - [ ] **Step 5: Run tests**
 
-Run: `pnpm install && pnpm --filter @zenhyre/db build && pnpm --filter @zenhyre/ops test`
+Run: `pnpm turbo run test --filter=@zenhyre/ops`
 Expected: 3 passed.
 
 - [ ] **Step 6: Commit**
@@ -902,7 +953,7 @@ describe("review items", () => {
 
 - [ ] **Step 2: Run to see it fail**
 
-Run: `pnpm --filter @zenhyre/ops test`
+Run: `pnpm turbo run test --filter=@zenhyre/ops`
 Expected: FAIL, `openReview` is not a function.
 
 - [ ] **Step 3: Implement**
@@ -998,7 +1049,7 @@ export function createOps(db: DbOrTx): Ops {
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm --filter @zenhyre/ops test`
+Run: `pnpm turbo run test --filter=@zenhyre/ops`
 Expected: 7 passed (3 config + 4 review).
 
 - [ ] **Step 5: Commit**
@@ -1115,7 +1166,7 @@ describe("notify", () => {
 
 - [ ] **Step 2: Run to see it fail**
 
-Run: `pnpm --filter @zenhyre/notify test` → FAIL, module not found.
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/notify` → FAIL, module not found.
 
 - [ ] **Step 3: Implement**
 
@@ -1246,7 +1297,7 @@ export function createNotify(db: DbOrTx, transport: Transport): Notify {
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm install && pnpm --filter @zenhyre/db build && pnpm --filter @zenhyre/notify test`
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/notify`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
@@ -1398,7 +1449,7 @@ export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}): Identity {
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm install && pnpm --filter @zenhyre/db build && pnpm --filter @zenhyre/identity test`
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/identity`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
@@ -1506,7 +1557,10 @@ describe("profile and matchable list", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see it fail** → FAIL, `seedCampuses` not a function.
+- [ ] **Step 2: Run to see it fail**
+
+Run: `pnpm turbo run test --filter=@zenhyre/identity`
+Expected: FAIL, `seedCampuses` not a function.
 
 - [ ] **Step 3: Implement campus helpers**
 
@@ -1670,7 +1724,10 @@ Update `packages/identity/src/index.ts`: add `finalYearMonths?: number; maxVerif
 
 (Config values are passed in by the caller from `ops.config` so `identity` does not depend on `ops` at runtime; the API's context does the lookup.)
 
-- [ ] **Step 5: Run tests** → candidate.test.ts 7 passed; auth.test.ts still 4 passed.
+- [ ] **Step 5: Run tests**
+
+Run: `pnpm turbo run test --filter=@zenhyre/identity`
+Expected: candidate.test.ts 7 passed; auth.test.ts still 4 passed.
 
 - [ ] **Step 6: Commit**
 
@@ -1753,7 +1810,10 @@ describe("association", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see it fail** → FAIL, `createCompany` not a function.
+- [ ] **Step 2: Run to see it fail**
+
+Run: `pnpm turbo run test --filter=@zenhyre/identity`
+Expected: FAIL, `createCompany` not a function.
 
 - [ ] **Step 3: Implement**
 
@@ -1894,7 +1954,10 @@ export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}): Identity {
 
 (The explicit `Identity` type is what keeps `withDb` from being an implicit-any recursion under `strict`; the same pattern is used in `ops` and `notify`.)
 
-- [ ] **Step 4: Run tests** → company.test.ts 5 passed; all identity tests green.
+- [ ] **Step 4: Run tests**
+
+Run: `pnpm turbo run test --filter=@zenhyre/identity`
+Expected: company.test.ts 5 passed; all identity tests green (16).
 
 - [ ] **Step 5: Commit**
 
@@ -1993,7 +2056,10 @@ describe("auth", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see it fail** → FAIL, `../src/app` not found.
+- [ ] **Step 2: Run to see it fail**
+
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/api`
+Expected: FAIL, `../src/app` not found.
 
 - [ ] **Step 3: Implement**
 
@@ -2133,7 +2199,10 @@ const app = await buildApp({ db, clock: systemClock, transport, baseUrl: process
 serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 4000) }, (i) => console.log(`api on :${i.port}`));
 ```
 
-- [ ] **Step 4: Run tests** → 2 passed.
+- [ ] **Step 4: Run tests**
+
+Run: `pnpm install && pnpm turbo run test --filter=@zenhyre/api`
+Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -2281,7 +2350,10 @@ describe("admin", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see them fail** → FAIL, 404s on the new routes.
+- [ ] **Step 2: Run to see them fail**
+
+Run: `pnpm turbo run test --filter=@zenhyre/api`
+Expected: FAIL, 404s on the new routes.
 
 - [ ] **Step 3: Workflows**
 
@@ -2660,7 +2732,7 @@ pnpm test:db:start          # local Postgres 16 on :5433
 export DATABASE_URL=postgres://zenhyre:zenhyre@localhost:5433/zenhyre
 pnpm db:migrate && pnpm db:seed
 pnpm -r build && pnpm test
-pnpm --filter @zenhyre/api exec tsx src/index.ts   # API on :4000 (emails printed to memory transport when RESEND_API_KEY unset)
+pnpm --filter @zenhyre/api dev   # API on :4000 (emails go to an in-memory transport when RESEND_API_KEY is unset)
 ```
 
 - [ ] **Step 3: Run seed against the dev DB, verify count**
