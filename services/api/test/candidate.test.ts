@@ -39,4 +39,10 @@ describe("candidate sign-up", () => {
     const o = await t.as(cookie)("/me/open", { method: "PUT", body: JSON.stringify({ open: false }) });
     expect(o.status).toBe(200);
   });
+  it("campus list exposes only public fields (§4.1: internal_tier is never exposed)", async () => {
+    const { cookie } = await t.signIn("22b0003@iitb.ac.in");
+    const body = await (await t.as(cookie)("/campuses")).json() as any;
+    expect(body.campuses).toHaveLength(1);
+    expect(Object.keys(body.campuses[0]).sort()).toEqual(["id", "name", "shortCode"]);
+  });
 });

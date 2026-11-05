@@ -48,4 +48,5 @@ candidateRoutes.put("/me/open", async (c) => {
 candidateRoutes.post("/me/verification/retry", async (c) => {
   return c.json({ candidate: await retryVerification(c.var.deps, c.var.user!.id) });
 });
-candidateRoutes.get("/campuses", async (c) => c.json({ campuses: await c.var.deps.identity.listCampuses() }));
+// §4.1: internal_tier is never exposed, so return only the public fields.
+candidateRoutes.get("/campuses", async (c) => c.json({ campuses: (await c.var.deps.identity.listCampuses()).map(({ id, name, shortCode }) => ({ id, name, shortCode })) }));
