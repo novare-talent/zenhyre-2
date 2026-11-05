@@ -115,8 +115,8 @@ packages:
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -131,6 +131,8 @@ packages:
 ```ts
 export default ["packages/*/vitest.config.ts", "services/*/vitest.config.ts"];
 ```
+
+Module resolution note: `Bundler` resolution lets source use extensionless relative imports. `tsc` emits them unchanged, so compiled `dist/` is consumed by other workspace packages through vitest/tsx (which resolve extensionless ESM), and the API runs under `tsx` in dev and prod for this slice. Plan 1B adds `tsup` bundling for a Node-native production build.
 
 `.gitignore`:
 ```
@@ -483,6 +485,8 @@ export interface CandidateProfile {
   linkedin_url?: string;
   cv_url?: string;
   parsed_cv?: Record<string, unknown>;
+  /** alumni direct request: what the candidate claimed at sign-up, shown in the verification queue */
+  claimed?: { batch: string; branch: string; linkedinUrl: string };
 }
 
 export const company = pgTable("company", {
@@ -974,7 +978,7 @@ export function createAudit(db: DbOrTx) {
 }
 ```
 
-`packages/ops/src/index.ts`:
+`packages/ops/src/index.ts` (final form; `withDb` lets a workflow rebind the module to a transaction):
 ```ts
 import { DbOrTx } from "@zenhyre/db";
 import { createConfig } from "./config";
@@ -982,10 +986,14 @@ import { createReview } from "./review";
 import { createAudit } from "./audit";
 export * from "./defaults";
 export * from "./review";
-export function createOps(db: DbOrTx) {
+
+function buildOps(db: DbOrTx) {
   return { config: createConfig(db), ...createReview(db), ...createAudit(db) };
 }
-export type Ops = ReturnType<typeof createOps>;
+export type Ops = ReturnType<typeof buildOps> & { withDb(tx: DbOrTx): Ops };
+export function createOps(db: DbOrTx): Ops {
+  return { ...buildOps(db), withDb: (tx) => createOps(tx) };
+}
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1027,17 +1035,17 @@ packages/identity/
 
 ```
 services/api/   (Chunk 3)
-  src/index.ts               Hono app factory + server entry
-  src/context.ts             AppDeps: db, ops, identity, notify, clock
-  src/middleware/auth.ts     session cookie → c.var.user
-  src/routes/auth.ts         POST /auth/magic-link, GET /auth/redeem
-  src/routes/candidate.ts    POST /candidates (sign-up), GET/PUT /me/profile, PUT /me/open
-  src/routes/company.ts      POST /companies (sign-up), POST /companies/:id/invites
-  src/routes/admin.ts        GET /admin/reviews, POST /admin/reviews/:id/resolve, GET/PUT /admin/config
-  src/workflows/signUpCandidate.ts
-  src/workflows/resolveVerification.ts
-  src/workflows/saveProfile.ts
-  test/api.test.ts
+  src/index.ts               server entry (tsx)
+  src/app.ts                 buildApp(): Hono app factory, error mapping, route mounting
+  src/context.ts             AppConfig/AppDeps: db, ops, identity, notify, clock, baseUrl, webhookSecret
+  src/middleware/auth.ts     session cookie → c.var.user; requireUser / requireStaff
+  src/routes/auth.ts         POST /auth/magic-link, GET /auth/redeem, POST /auth/signout, GET /me
+  src/routes/candidate.ts    POST /candidates, GET/PUT /me/profile, PUT /me/open, POST /me/verification/retry, GET /campuses
+  src/routes/company.ts      POST /companies, POST /companies/:id/invites, GET /companies/:id
+  src/routes/admin.ts        GET /admin/reviews, POST /admin/reviews/:id/resolve, GET/PUT /admin/config, POST /admin/associations
+  src/routes/webhooks.ts     POST /webhooks/resend
+  src/workflows/{signUpCandidate,retryVerification,resolveVerification,saveProfile}.ts
+  test/{helpers,auth.test,candidate.test,company.test,admin.test,webhooks.test}.ts
 ```
 
 ### Task 7: `packages/notify`
@@ -1070,13 +1078,20 @@ describe("notify", () => {
     const t = new MemoryTransport();
     const notify = createNotify(db, t);
     const uid = await userWithEmails(["p@iitb.ac.in", "q@gmail.com"]);
-    await notify.send(uid, "magic_link", { url: "http://x/redeem?t=1" });
+    await notify.send(uid, "add_personal_email", {});
     expect(t.sent[0]!.to).toBe("p@iitb.ac.in");
-    expect(t.sent[0]!.subject).toMatch(/sign in/i);
+    expect(t.sent[0]!.subject).toMatch(/personal email/i);
     const rows = await db.select().from(schema.notification);
     expect(rows.map((r: any) => r.channel).sort()).toEqual(["email", "in_app"]);
   });
-  it("falls back to the next verified email after a bounce and opens an alert after two", async () => {
+  it("sends a template to a bare address with no user (magic links, invites)", async () => {
+    const t = new MemoryTransport();
+    const notify = createNotify(db, t);
+    await notify.sendToEmail("nobody-yet@gmail.com", "magic_link", { url: "http://x/redeem?t=1" });
+    expect(t.sent.at(-1)!.to).toBe("nobody-yet@gmail.com");
+    expect(t.sent.at(-1)!.subject).toMatch(/sign in/i);
+  });
+  it("falls back to the next verified email after a bounce and reports undeliverable when all have bounced", async () => {
     const t = new MemoryTransport();
     const notify = createNotify(db, t);
     const uid = await userWithEmails(["dead@iitb.ac.in", "alive@gmail.com"]);
@@ -1159,7 +1174,7 @@ export type TemplateName = keyof typeof TEMPLATES;
 
 `packages/notify/src/index.ts`:
 ```ts
-import { and, asc, eq, isNotNull, lt } from "drizzle-orm";
+import { and, asc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import { TEMPLATES, TemplateName } from "./templates";
 import { Transport } from "./transport";
@@ -1168,16 +1183,27 @@ export * from "./templates";
 
 export interface SendResult { email: "sent" | "skipped" | "undeliverable"; inApp: boolean }
 
-export function createNotify(db: DbOrTx, transport: Transport) {
+/**
+ * Bounce policy (interpretation of §11 chosen for v1): one hard bounce disqualifies an address;
+ * when every verified address on the account is disqualified, send() returns "undeliverable"
+ * and the caller opens an `alert` ReviewItem.
+ */
+function buildNotify(db: DbOrTx, transport: Transport) {
   async function deliverableEmail(userId: string): Promise<string | null> {
     const rows = await db.select().from(schema.userEmail)
       .where(and(eq(schema.userEmail.userId, userId), isNotNull(schema.userEmail.verifiedAt), lt(schema.userEmail.bounceCount, 1)))
-      .orderBy(asc(schema.userEmail.isPrimary)); // false < true, so reverse below
+      .orderBy(asc(schema.userEmail.email));
     const pick = rows.find((r) => r.isPrimary) ?? rows[0];
     return pick?.email ?? null;
   }
 
   return {
+    /** For recipients who may not have a user yet (magic links, invites). Email-only; no notification row. */
+    async sendToEmail(email: string, template: TemplateName, data: Record<string, unknown>) {
+      const t = TEMPLATES[template];
+      await transport.send({ to: email.toLowerCase(), subject: t.subject(data), text: t.text(data) });
+    },
+    async hasDeliverableEmail(userId: string) { return (await deliverableEmail(userId)) !== null; },
     async send(userId: string, template: TemplateName, data: Record<string, unknown>): Promise<SendResult> {
       const t = TEMPLATES[template];
       const result: SendResult = { email: "skipped", inApp: false };
@@ -1198,20 +1224,30 @@ export function createNotify(db: DbOrTx, transport: Transport) {
       }
       return result;
     },
+    /** Atomic increment; a no-op for addresses we don't know. The reason is recorded on the last email notification row for that user, if any. */
     async recordBounce(email: string, reason: string) {
-      await db.update(schema.userEmail)
-        .set({ bounceCount: (await db.select().from(schema.userEmail).where(eq(schema.userEmail.email, email)))[0]!.bounceCount + 1 })
-        .where(eq(schema.userEmail.email, email));
-      void reason;
+      const [row] = await db.update(schema.userEmail)
+        .set({ bounceCount: sql`${schema.userEmail.bounceCount} + 1` })
+        .where(eq(schema.userEmail.email, email.toLowerCase())).returning();
+      if (row) {
+        await db.execute(sql`update notification set bounce_reason = ${reason}
+          where id = (select id from notification where user_id = ${row.userId} and channel = 'email' order by created_at desc limit 1)`);
+      }
     },
   };
 }
-export type Notify = ReturnType<typeof createNotify>;
+export type Notify = ReturnType<typeof buildNotify> & { withDb(tx: DbOrTx): Notify };
+export function createNotify(db: DbOrTx, transport: Transport): Notify {
+  return { ...buildNotify(db, transport), withDb: (tx) => createNotify(tx, transport) };
+}
 ```
 
-(The "two bounces on all emails open an `alert`" rule from §11 is applied by the caller: the API's bounce webhook handler checks `deliverableEmail` after `recordBounce` and calls `ops.openReview({kind:"alert"})`; that handler is written in Task 12.)
+(The "all emails bouncing → `alert`" rule from §11 is applied by the caller: the API's bounce webhook handler calls `hasDeliverableEmail` after `recordBounce` and opens the alert; that handler is written in Task 12.)
 
-- [ ] **Step 4: Run tests** → 3 passed.
+- [ ] **Step 4: Run tests**
+
+Run: `pnpm install && pnpm --filter @zenhyre/db build && pnpm --filter @zenhyre/notify test`
+Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1321,7 +1357,16 @@ export function createAuth(db: DbOrTx, clock: Clock) {
       return { userId: existing.userId, email: t.email, sessionId, created, purpose: t.purpose as LinkPurpose, payload: t.payload };
     },
     async addEmail(userId: string, email: string) {
-      await db.insert(schema.userEmail).values({ userId, email: email.toLowerCase() });
+      const taken = await findUserByEmail(email.toLowerCase());
+      if (taken && taken.userId !== userId) throw new Invalid("email belongs to another account");
+      if (!taken) await db.insert(schema.userEmail).values({ userId, email: email.toLowerCase() });
+    },
+    async emailsFor(userId: string) {
+      return db.select().from(schema.userEmail).where(eq(schema.userEmail.userId, userId));
+    },
+    async userIdForEmail(email: string): Promise<string | null> {
+      const r = await findUserByEmail(email.toLowerCase());
+      return r?.userId ?? null;
     },
     async userForSession(sessionId: string) {
       const [s] = await db.select().from(schema.session).where(eq(schema.session.id, sessionId));
@@ -1336,20 +1381,25 @@ export function createAuth(db: DbOrTx, clock: Clock) {
 }
 ```
 
-`packages/identity/src/index.ts`:
+`packages/identity/src/index.ts` (interim; Task 10 gives the final form):
 ```ts
 import { DbOrTx } from "@zenhyre/db";
 import { Clock, systemClock } from "@zenhyre/shared";
 import { createAuth } from "./auth";
 export interface IdentityDeps { clock?: Clock }
-export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}) {
-  const clock = deps.clock ?? systemClock;
-  return { ...createAuth(db, clock) };
+function buildIdentity(db: DbOrTx, deps: IdentityDeps) {
+  return { ...createAuth(db, deps.clock ?? systemClock) };
 }
-export type Identity = ReturnType<typeof createIdentity>;
+export type Identity = ReturnType<typeof buildIdentity> & { withDb(tx: DbOrTx): Identity };
+export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}): Identity {
+  return { ...buildIdentity(db, deps), withDb: (tx) => createIdentity(tx, deps) };
+}
 ```
 
-- [ ] **Step 4: Run tests** → 4 passed.
+- [ ] **Step 4: Run tests**
+
+Run: `pnpm install && pnpm --filter @zenhyre/db build && pnpm --filter @zenhyre/identity test`
+Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1541,14 +1591,15 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
         rollNumberFlag: rollFlag, status: deriveStatus(input.gradDate, now, opts.finalYearMonths),
         verificationState: state, verificationSource: source, verificationAttempts: byEmail ? 0 : 1,
         verifiedBy: byEmail ? "system" : null, verifiedAt: byEmail ? now : null,
-        profile: input.claimed ? { linkedin_url: input.claimed.linkedinUrl, parsed_cv: { claimed: input.claimed } } : {},
+        profile: input.claimed ? { linkedin_url: input.claimed.linkedinUrl, claimed: input.claimed } : {},
       }).returning();
       return row!;
     },
 
+    /** §6.1: campus_email and referral sources are preserved on approval; association/staff set by the approver. */
     async verifyCandidate(userId: string, by: { by: string; source: "association" | "staff" }) {
       const c = await get(userId); if (!c) throw new NotFound("candidate");
-      const source = c.verificationSource === "referral" ? "referral" : by.source;
+      const source = (c.verificationSource === "referral" || c.verificationSource === "campus_email") ? c.verificationSource : by.source;
       const [row] = await db.update(schema.candidate)
         .set({ verificationState: "verified", verificationSource: source, verifiedBy: by.by, verifiedAt: clock.now() })
         .where(eq(schema.candidate.userId, userId)).returning();
@@ -1615,23 +1666,7 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
 }
 ```
 
-Update `packages/identity/src/index.ts`:
-```ts
-import { DbOrTx } from "@zenhyre/db";
-import { Clock, systemClock } from "@zenhyre/shared";
-import { createAuth } from "./auth";
-import { createCandidateModule } from "./candidate";
-export * from "./candidate";
-export interface IdentityDeps { clock?: Clock; finalYearMonths?: number; maxVerificationAttempts?: number }
-export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}) {
-  const clock = deps.clock ?? systemClock;
-  return {
-    ...createAuth(db, clock),
-    ...createCandidateModule(db, clock, { finalYearMonths: deps.finalYearMonths ?? 12, maxVerificationAttempts: deps.maxVerificationAttempts ?? 2 }),
-  };
-}
-export type Identity = ReturnType<typeof createIdentity>;
-```
+Update `packages/identity/src/index.ts`: add `finalYearMonths?: number; maxVerificationAttempts?: number` to `IdentityDeps`, import `createCandidateModule`, and spread `...createCandidateModule(db, clock, { finalYearMonths: deps.finalYearMonths ?? 12, maxVerificationAttempts: deps.maxVerificationAttempts ?? 2 })` inside `buildIdentity` after `createAuth`. Add `export * from "./candidate";`. (Task 10 shows the complete final file.)
 
 (Config values are passed in by the caller from `ops.config` so `identity` does not depend on `ops` at runtime; the API's context does the lookup.)
 
@@ -1705,10 +1740,11 @@ describe("company", () => {
 
 describe("association", () => {
   it("creates an association for a campus and invites an admin", async () => {
+    const staff = await signedIn("ops@novaretalent.com");
     await id.seedCampuses([{ name: "IIT Hyderabad", shortCode: "IITH", emailDomains: ["iith.ac.in"], rollNumberRegex: null, internalTier: 2 }]);
     const campusId = (await id.campusByShortCode("IITH"))!.id;
-    const assoc = await id.createAssociation({ campusId, name: "IITHAA", shareRate: 0.15, payoutMode: "sponsorship_credit", createdBy: "staff:u1" });
-    const inv = await id.inviteAssociationAdmin({ associationId: assoc.id, invitedBy: "staff:u1", email: "admin@iithaa.org" });
+    const assoc = await id.createAssociation({ campusId, name: "IITHAA", shareRate: 0.15, payoutMode: "sponsorship_credit" });
+    const inv = await id.inviteAssociationAdmin({ associationId: assoc.id, invitedBy: staff.userId, email: "admin@iithaa.org" });
     const r = await id.redeemMagicLink(inv.token);
     const m = await id.acceptAssociationInvite(r.userId, r.payload as any);
     expect(m.associationId).toBe(assoc.id);
@@ -1780,7 +1816,8 @@ export function createCompanyModule(db: DbOrTx, clock: Clock, opts: { freemailDo
     async mergeCompanies(input: { survivorId: string; absorbedId: string }) {
       const users = await db.select().from(schema.companyUser).where(eq(schema.companyUser.companyId, input.absorbedId));
       for (const u of users) {
-        await db.insert(schema.companyUser).values({ ...u, companyId: input.survivorId, role: "member" }).onConflictDoNothing();
+        // Locks belong to the absorbed company's history; the survivor's status governs from here.
+        await db.insert(schema.companyUser).values({ ...u, companyId: input.survivorId, role: "member", lockedAt: null }).onConflictDoNothing();
       }
       await db.delete(schema.companyUser).where(eq(schema.companyUser.companyId, input.absorbedId));
       await db.delete(schema.company).where(eq(schema.company.id, input.absorbedId));
@@ -1799,7 +1836,7 @@ import { createAuth } from "./auth";
 export function createAssociationModule(db: DbOrTx, clock: Clock) {
   const auth = createAuth(db, clock);
   return {
-    async createAssociation(input: { campusId: string; name: string; shareRate: number; payoutMode: "cash" | "sponsorship_credit"; createdBy: string; contacts?: Record<string, unknown> }) {
+    async createAssociation(input: { campusId: string; name: string; shareRate: number; payoutMode: "cash" | "sponsorship_credit"; contacts?: Record<string, unknown> }) {
       const [row] = await db.insert(schema.association)
         .values({ campusId: input.campusId, name: input.name, shareRate: input.shareRate.toFixed(4), payoutMode: input.payoutMode, contacts: input.contacts ?? {} }).returning();
       return row!;
@@ -1826,7 +1863,36 @@ export function createAssociationModule(db: DbOrTx, clock: Clock) {
 }
 ```
 
-Update `packages/identity/src/index.ts` to spread `createCompanyModule(db, clock, { freemailDomains: deps.freemailDomains ?? [] })` and `createAssociationModule(db, clock)`, and add `freemailDomains?: string[]` to `IdentityDeps`.
+Final `packages/identity/src/index.ts` (this is the version Chunk 3 builds on; it already includes `withDb`):
+```ts
+import { DbOrTx } from "@zenhyre/db";
+import { Clock, systemClock } from "@zenhyre/shared";
+import { createAuth } from "./auth";
+import { createCandidateModule } from "./candidate";
+import { createCompanyModule } from "./company";
+import { createAssociationModule } from "./association";
+export * from "./candidate";
+
+export interface IdentityDeps {
+  clock?: Clock; finalYearMonths?: number; maxVerificationAttempts?: number; freemailDomains?: string[];
+}
+
+function buildIdentity(db: DbOrTx, deps: IdentityDeps) {
+  const clock = deps.clock ?? systemClock;
+  return {
+    ...createAuth(db, clock),
+    ...createCandidateModule(db, clock, { finalYearMonths: deps.finalYearMonths ?? 12, maxVerificationAttempts: deps.maxVerificationAttempts ?? 2 }),
+    ...createCompanyModule(db, clock, { freemailDomains: deps.freemailDomains ?? [] }),
+    ...createAssociationModule(db, clock),
+  };
+}
+export type Identity = ReturnType<typeof buildIdentity> & { withDb(tx: DbOrTx): Identity };
+export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}): Identity {
+  return { ...buildIdentity(db, deps), withDb: (tx) => createIdentity(tx, deps) };
+}
+```
+
+(The explicit `Identity` type is what keeps `withDb` from being an implicit-any recursion under `strict`; the same pattern is used in `ops` and `notify`.)
 
 - [ ] **Step 4: Run tests** → company.test.ts 5 passed; all identity tests green.
 
@@ -1843,8 +1909,39 @@ git add packages/identity && git commit -m "feat(identity): company onboarding, 
 ### Task 11: `services/api` — app factory, auth middleware, auth routes
 
 **Files:**
-- Create: `services/api/package.json` (name `@zenhyre/api`, deps `hono`, `@hono/node-server`, `zod`, `@zenhyre/{db,shared,ops,identity,notify}`), `tsconfig.json`, `vitest.config.ts`, `src/context.ts`, `src/index.ts`, `src/app.ts`, `src/middleware/auth.ts`, `src/routes/auth.ts`
+- Create: `services/api/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/context.ts`, `src/index.ts`, `src/app.ts`, `src/middleware/auth.ts`, `src/routes/auth.ts`
 - Test: `services/api/test/helpers.ts`, `services/api/test/auth.test.ts`
+
+`services/api/package.json`:
+```json
+{
+  "name": "@zenhyre/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "zod": "^3.23.0",
+    "drizzle-orm": "^0.36.0",
+    "svix": "^1.40.0",
+    "@zenhyre/db": "workspace:*",
+    "@zenhyre/shared": "workspace:*",
+    "@zenhyre/ops": "workspace:*",
+    "@zenhyre/identity": "workspace:*",
+    "@zenhyre/notify": "workspace:*"
+  },
+  "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}
+```
+`tsconfig.json` and `vitest.config.ts`: same as `packages/shared` (tsconfig `include: ["src", "test"]`).
 
 - [ ] **Step 1: Test helper and failing test**
 
@@ -1908,7 +2005,7 @@ import { createOps, Ops } from "@zenhyre/ops";
 import { createIdentity, Identity } from "@zenhyre/identity";
 import { createNotify, Notify, Transport } from "@zenhyre/notify";
 
-export interface AppConfig { db: Db; clock: Clock; transport: Transport; baseUrl: string }
+export interface AppConfig { db: Db; clock: Clock; transport: Transport; baseUrl: string; webhookSecret?: string }
 export interface AppDeps extends AppConfig { ops: Ops; identity: Identity; notify: Notify }
 
 export async function buildDeps(cfg: AppConfig): Promise<AppDeps> {
@@ -1959,12 +2056,10 @@ export const authRoutes = new Hono<{ Variables: Vars }>();
 
 authRoutes.post("/auth/magic-link", async (c) => {
   const { email } = z.object({ email: z.string().email() }).parse(await c.req.json());
-  const { identity, notify, baseUrl, db } = c.var.deps;
+  const { identity, notify, baseUrl } = c.var.deps;
   const { token } = await identity.issueMagicLink(email, "signin", {});
-  // The user may not exist yet, so send directly rather than via notify.send(userId)
-  const url = `${baseUrl}/auth/redeem?t=${token}`;
-  await c.var.deps.transport.send({ to: email.toLowerCase(), subject: "Sign in to Zenhyre", text: `Click to sign in (valid 15 minutes): ${url}` });
-  void db;
+  // The user may not exist yet, so address by email rather than by userId.
+  await notify.sendToEmail(email, "magic_link", { url: `${baseUrl}/auth/redeem?t=${token}` });
   return c.json({ ok: true });
 });
 
@@ -2010,10 +2105,14 @@ export async function buildApp(cfg: AppConfig) {
   app.onError((err, c) => {
     if (err instanceof DomainError) return c.json({ error: err.code, message: err.message }, err.status as any);
     if (err instanceof ZodError) return c.json({ error: "invalid", issues: err.issues }, 400);
+    if (err instanceof SyntaxError) return c.json({ error: "invalid", message: "malformed JSON" }, 400);
     console.error(err);
     return c.json({ error: "internal" }, 500);
   });
   app.route("/", authRoutes);
+  // Task 12 mounts: webhookRoutes (unauthenticated) and the guarded route groups.
+  // Guards are applied per path prefix inside each route file, never as `use("*")` on a
+  // sub-app, because sub-app middleware registered on "*" leaks onto every later route.
   return app;
 }
 ```
@@ -2030,7 +2129,7 @@ const { db } = createDb();
 const transport = process.env.RESEND_API_KEY
   ? new ResendTransport(process.env.RESEND_API_KEY, process.env.MAIL_FROM ?? "Zenhyre <no-reply@zenhyre.com>")
   : new MemoryTransport();
-const app = await buildApp({ db, clock: systemClock, transport, baseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000" });
+const app = await buildApp({ db, clock: systemClock, transport, baseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000", webhookSecret: process.env.RESEND_WEBHOOK_SECRET });
 serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 4000) }, (i) => console.log(`api on :${i.port}`));
 ```
 
@@ -2045,9 +2144,11 @@ git add services/api && git commit -m "feat(api): hono app, session middleware, 
 ### Task 12: `services/api` — candidate and company routes with workflows
 
 **Files:**
-- Create: `services/api/src/workflows/signUpCandidate.ts`, `src/workflows/resolveVerification.ts`, `src/workflows/saveProfile.ts`, `src/routes/candidate.ts`, `src/routes/company.ts`, `src/routes/admin.ts`, `src/routes/webhooks.ts`
-- Modify: `services/api/src/app.ts`
-- Test: `services/api/test/candidate.test.ts`, `services/api/test/company.test.ts`, `services/api/test/admin.test.ts`
+- Create: `services/api/src/workflows/signUpCandidate.ts`, `src/workflows/retryVerification.ts`, `src/workflows/resolveVerification.ts`, `src/workflows/saveProfile.ts`, `src/routes/candidate.ts`, `src/routes/company.ts`, `src/routes/admin.ts`, `src/routes/webhooks.ts`
+- Modify: `services/api/src/app.ts` (mount order)
+- Test: `services/api/test/candidate.test.ts`, `services/api/test/company.test.ts`, `services/api/test/admin.test.ts`, `services/api/test/webhooks.test.ts`
+
+(`withDb`, `emailsFor`, `userIdForEmail`, `sendToEmail`, `hasDeliverableEmail` were all added in Chunk 2; nothing in the packages changes in this task.)
 
 - [ ] **Step 1: Failing tests**
 
@@ -2202,49 +2303,50 @@ export async function signUpCandidate(deps: AppDeps, input: CreateCandidateInput
     if (c.verificationState === "verification_pending") {
       const assoc = await identity.associationForCampus(c.campusId);
       await ops.openReview({ kind: "verification", refType: "candidate", refId: c.userId, associationId: assoc?.id ?? null,
-        payload: { claimed: (c.profile.parsed_cv as any)?.claimed ?? {}, attempt: c.verificationAttempts } });
+        payload: { claimed: c.profile.claimed ?? {}, attempt: c.verificationAttempts } });
     }
     return c;
   });
 }
 ```
 
-This needs a `withDb(tx)` on each module so a workflow can rebind to a transaction. Add to `packages/ops/src/index.ts` and `packages/identity/src/index.ts`:
-
+`services/api/src/workflows/retryVerification.ts`:
 ```ts
-// ops
-export function createOps(db: DbOrTx) {
-  const base = { config: createConfig(db), ...createReview(db), ...createAudit(db) };
-  return { ...base, withDb: (tx: DbOrTx) => createOps(tx) };
-}
-// identity
-export function createIdentity(db: DbOrTx, deps: IdentityDeps = {}) {
-  ...
-  return { ...modules, withDb: (tx: DbOrTx) => createIdentity(tx, deps) };
-}
-// notify
-export function createNotify(db: DbOrTx, transport: Transport) {
-  ...
-  return { ...fns, withDb: (tx: DbOrTx) => createNotify(tx, transport) };
+import { AppDeps } from "../context";
+/** Candidate re-requests verification after a rejection (§6.1, at most one retry). identity + ops in one transaction. */
+export async function retryVerification(deps: AppDeps, userId: string) {
+  return deps.db.transaction(async (tx) => {
+    const identity = deps.identity.withDb(tx), ops = deps.ops.withDb(tx);
+    const row = await identity.requestVerificationAgain(userId);
+    const assoc = await identity.associationForCampus(row.campusId);
+    await ops.openReview({ kind: "verification", refType: "candidate", refId: row.userId, associationId: assoc?.id ?? null,
+      payload: { claimed: row.profile.claimed ?? {}, attempt: row.verificationAttempts } });
+    return row;
+  });
 }
 ```
 
 `services/api/src/workflows/resolveVerification.ts`:
 ```ts
+import { z } from "zod";
 import { AppDeps } from "../context";
-import { Invalid, NotFound } from "@zenhyre/shared";
+import { Forbidden, NotFound } from "@zenhyre/shared";
 
-export type VerificationResolution = "approve" | "reject" | "reject_fraud" | "clear_flag";
+export const VerificationResolution = z.enum(["approve", "reject", "reject_fraud", "clear_flag"]);
+export type VerificationResolution = z.infer<typeof VerificationResolution>;
 
-/** §3.3 resolveVerification: identity + ops + notify. Trust (`profile_false`) is attached in Slice 3. */
+/**
+ * §3.3 resolveVerification: identity + ops + notify in one transaction. Trust (`profile_false`) is attached in Slice 3.
+ * Note: notify.send runs inside the transaction here; Plan 1B moves email delivery to a post-commit job.
+ */
 export async function resolveVerification(deps: AppDeps, input: { reviewId: string; actor: { id: string; isStaff: boolean; associationId?: string }; resolution: VerificationResolution; note?: string }) {
   return deps.db.transaction(async (tx) => {
     const identity = deps.identity.withDb(tx), ops = deps.ops.withDb(tx), notify = deps.notify.withDb(tx);
     const item = await ops.getReview(input.reviewId);
     if (!item || item.kind !== "verification" || item.resolvedAt) throw new NotFound("open verification item");
-    if (!input.actor.isStaff && item.associationId !== input.actor.associationId) throw new Invalid("not your queue");
+    if (!input.actor.isStaff && item.associationId !== input.actor.associationId) throw new Forbidden("not your queue");
     const userId = item.refId;
-    const by = input.actor.isStaff ? `staff:${input.actor.id}` : `association:${input.actor.id}`;
+    const by = input.actor.id; // §4.1: verified_by is a user id or "system"
     switch (input.resolution) {
       case "approve":
         await identity.verifyCandidate(userId, { by, source: input.actor.isStaff ? "staff" : "association" });
@@ -2259,7 +2361,7 @@ export async function resolveVerification(deps: AppDeps, input: { reviewId: stri
         await identity.clearRollNumberFlag(userId);
         break;
     }
-    await ops.resolveReview(item.id, by, input.resolution);
+    await ops.resolveReview(item.id, input.actor.isStaff ? `staff:${by}` : `association:${by}`, input.resolution);
     if (input.actor.isStaff) await ops.audit(input.actor.id, `verification.${input.resolution}`, "candidate", userId, input.note);
   });
 }
@@ -2284,10 +2386,14 @@ import { z } from "zod";
 import { Vars } from "../context";
 import { requireUser } from "../middleware/auth";
 import { signUpCandidate } from "../workflows/signUpCandidate";
+import { retryVerification } from "../workflows/retryVerification";
 import { saveProfile } from "../workflows/saveProfile";
 
 export const candidateRoutes = new Hono<{ Variables: Vars }>();
-candidateRoutes.use("*", requireUser);
+// Prefix-scoped guards: these do not leak onto other route groups mounted on the same parent.
+candidateRoutes.use("/candidates", requireUser);
+candidateRoutes.use("/me/*", requireUser);
+candidateRoutes.use("/campuses", requireUser);
 
 const signUp = z.object({
   gradDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), course: z.string().min(1), rollNumber: z.string().nullable().optional(),
@@ -2323,19 +2429,9 @@ candidateRoutes.put("/me/open", async (c) => {
   return c.json({ ok: true });
 });
 candidateRoutes.post("/me/verification/retry", async (c) => {
-  const row = await c.var.deps.identity.requestVerificationAgain(c.var.user!.id);
-  const assoc = await c.var.deps.identity.associationForCampus(row.campusId);
-  await c.var.deps.ops.openReview({ kind: "verification", refType: "candidate", refId: row.userId, associationId: assoc?.id ?? null, payload: { attempt: row.verificationAttempts } });
-  return c.json({ candidate: row });
+  return c.json({ candidate: await retryVerification(c.var.deps, c.var.user!.id) });
 });
 candidateRoutes.get("/campuses", async (c) => c.json({ campuses: await c.var.deps.identity.listCampuses() }));
-```
-
-Add `emailsFor(userId)` to `packages/identity/src/auth.ts`:
-```ts
-async emailsFor(userId: string) {
-  return db.select().from(schema.userEmail).where(eq(schema.userEmail.userId, userId));
-},
 ```
 
 `services/api/src/routes/company.ts`:
@@ -2346,7 +2442,8 @@ import { Vars } from "../context";
 import { requireUser } from "../middleware/auth";
 
 export const companyRoutes = new Hono<{ Variables: Vars }>();
-companyRoutes.use("*", requireUser);
+companyRoutes.use("/companies", requireUser);
+companyRoutes.use("/companies/*", requireUser);
 
 companyRoutes.post("/companies", async (c) => {
   const { name } = z.object({ name: z.string().min(1) }).parse(await c.req.json());
@@ -2359,13 +2456,17 @@ companyRoutes.post("/companies", async (c) => {
 
 companyRoutes.post("/companies/:id/invites", async (c) => {
   const { email } = z.object({ email: z.string().email() }).parse(await c.req.json());
-  const { identity, transport, baseUrl } = c.var.deps;
+  const { identity, notify, baseUrl } = c.var.deps;
   const companyId = c.req.param("id");
-  const m = await identity.requireActiveMember(c.var.user!.id, companyId);
-  if (m.role !== "owner" && !c.var.user!.isStaff) return c.json({ error: "owner only" }, 403);
-  const company = (await identity.getCompany(companyId))!;
-  const { token } = await identity.inviteCompanyUser({ companyId, invitedBy: c.var.user!.id, email, staffOverride: c.var.user!.isStaff });
-  await transport.send({ to: email.toLowerCase(), subject: `Join ${company.name} on Zenhyre`, text: `Accept: ${baseUrl}/auth/redeem?t=${token}` });
+  const isStaff = c.var.user!.isStaff;
+  if (!isStaff) {
+    const m = await identity.requireActiveMember(c.var.user!.id, companyId);
+    if (m.role !== "owner") return c.json({ error: "owner only" }, 403);
+  }
+  const company = await identity.getCompany(companyId);
+  if (!company) return c.json({ error: "not found" }, 404);
+  const { token } = await identity.inviteCompanyUser({ companyId, invitedBy: c.var.user!.id, email, staffOverride: isStaff });
+  await notify.sendToEmail(email, "company_invite", { companyName: company.name, inviterName: "A teammate", url: `${baseUrl}/auth/redeem?t=${token}` });
   return c.json({ ok: true });
 });
 
@@ -2382,11 +2483,11 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { Vars } from "../context";
 import { requireUser, requireStaff } from "../middleware/auth";
-import { resolveVerification } from "../workflows/resolveVerification";
+import { resolveVerification, VerificationResolution } from "../workflows/resolveVerification";
 import { ConfigKey, CONFIG } from "@zenhyre/ops";
 
 export const adminRoutes = new Hono<{ Variables: Vars }>();
-adminRoutes.use("*", requireUser, requireStaff);
+adminRoutes.use("/admin/*", requireUser, requireStaff);
 
 adminRoutes.get("/admin/reviews", async (c) => {
   const kind = c.req.query("kind") as any;
@@ -2400,7 +2501,8 @@ adminRoutes.post("/admin/reviews/:id/resolve", async (c) => {
   const item = await c.var.deps.ops.getReview(c.req.param("id"));
   if (!item) return c.json({ error: "not found" }, 404);
   if (item.kind === "verification") {
-    await resolveVerification(c.var.deps, { reviewId: item.id, actor: { id: c.var.user!.id, isStaff: true }, resolution: body.resolution as any, note: body.note });
+    const resolution = VerificationResolution.parse(body.resolution);
+    await resolveVerification(c.var.deps, { reviewId: item.id, actor: { id: c.var.user!.id, isStaff: true }, resolution, note: body.note });
   } else {
     await c.var.deps.ops.resolveReview(item.id, `staff:${c.var.user!.id}`, body.resolution);
     await c.var.deps.ops.audit(c.var.user!.id, `review.${item.kind}.${body.resolution}`, item.refType, item.refId, body.note);
@@ -2424,50 +2526,92 @@ adminRoutes.put("/admin/config/:key", async (c) => {
 
 adminRoutes.post("/admin/associations", async (c) => {
   const body = z.object({ campusShortCode: z.string(), name: z.string(), shareRate: z.number().min(0).max(1).default(0.15), payoutMode: z.enum(["cash", "sponsorship_credit"]), adminEmails: z.array(z.string().email()).default([]) }).parse(await c.req.json());
-  const { identity, transport, baseUrl } = c.var.deps;
+  const { identity, notify, baseUrl } = c.var.deps;
   const campus = await identity.campusByShortCode(body.campusShortCode);
   if (!campus) return c.json({ error: "unknown campus" }, 404);
-  const assoc = await identity.createAssociation({ campusId: campus.id, name: body.name, shareRate: body.shareRate, payoutMode: body.payoutMode, createdBy: c.var.user!.id });
+  if (await identity.associationForCampus(campus.id)) return c.json({ error: "campus already has an association" }, 409);
+  const assoc = await identity.createAssociation({ campusId: campus.id, name: body.name, shareRate: body.shareRate, payoutMode: body.payoutMode });
   for (const email of body.adminEmails) {
     const { token } = await identity.inviteAssociationAdmin({ associationId: assoc.id, invitedBy: c.var.user!.id, email });
-    await transport.send({ to: email, subject: `Admin access for ${assoc.name} on Zenhyre`, text: `Accept: ${baseUrl}/auth/redeem?t=${token}` });
+    await notify.sendToEmail(email, "association_admin_invite", { associationName: assoc.name, url: `${baseUrl}/auth/redeem?t=${token}` });
   }
   await c.var.deps.ops.audit(c.var.user!.id, "association.create", "association", assoc.id);
   return c.json({ association: assoc }, 201);
 });
 ```
 
-`services/api/src/routes/webhooks.ts` (Resend bounce → §11 rule):
+`services/api/src/routes/webhooks.ts` (Resend bounce → §11 rule; Svix-signed):
 ```ts
 import { Hono } from "hono";
 import { z } from "zod";
+import { Webhook } from "svix";
 import { Vars } from "../context";
 
 export const webhookRoutes = new Hono<{ Variables: Vars }>();
+
+const bounceEvent = z.object({ type: z.string(), data: z.object({ to: z.array(z.string()), bounce: z.object({ message: z.string() }).optional() }) });
+
 webhookRoutes.post("/webhooks/resend", async (c) => {
-  const body = z.object({ type: z.string(), data: z.object({ to: z.array(z.string()), bounce: z.object({ message: z.string() }).optional() }) }).parse(await c.req.json());
+  const raw = await c.req.text();
+  const secret = c.var.deps.webhookSecret;
+  let payload: unknown;
+  if (secret) {
+    try {
+      payload = new Webhook(secret).verify(raw, {
+        "svix-id": c.req.header("svix-id") ?? "", "svix-timestamp": c.req.header("svix-timestamp") ?? "", "svix-signature": c.req.header("svix-signature") ?? "" });
+    } catch { return c.json({ error: "bad signature" }, 401); }
+  } else {
+    payload = JSON.parse(raw); // tests and local dev run without a secret
+  }
+  const body = bounceEvent.parse(payload);
   if (body.type !== "email.bounced") return c.json({ ok: true });
   const { notify, identity, ops } = c.var.deps;
   for (const email of body.data.to) {
+    const userId = await identity.userIdForEmail(email);
+    if (!userId) continue; // invites to not-yet-users: nothing to record
     await notify.recordBounce(email, body.data.bounce?.message ?? "bounce");
-    const row = (await identity.userIdForEmail(email));
-    if (row && !(await notify.hasDeliverableEmail(row))) {
-      await ops.openReview({ kind: "alert", refType: "user", refId: row, associationId: null, payload: { reason: "all emails bouncing" } });
+    if (!(await notify.hasDeliverableEmail(userId))) {
+      await ops.openReview({ kind: "alert", refType: "user", refId: userId, associationId: null, payload: { reason: "all emails bouncing" } });
     }
   }
   return c.json({ ok: true });
 });
 ```
 
-Add to `packages/identity/src/auth.ts`: `async userIdForEmail(email) { const r = await findUserByEmail(email.toLowerCase()); return r?.userId ?? null; }`.
-Add to `packages/notify/src/index.ts`: `async hasDeliverableEmail(userId) { return (await deliverableEmail(userId)) !== null; }`.
+Add `webhookSecret?: string` to `AppConfig` in `context.ts`, and read it from `RESEND_WEBHOOK_SECRET` in `src/index.ts`.
 
-Mount in `app.ts`: `app.route("/", candidateRoutes); app.route("/", companyRoutes); app.route("/", adminRoutes); app.route("/", webhookRoutes);`
+`services/api/test/webhooks.test.ts`:
+```ts
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { schema } from "@zenhyre/db";
+import { testApp } from "./helpers";
+
+let t: Awaited<ReturnType<typeof testApp>>;
+beforeAll(async () => (t = await testApp()));
+afterAll(() => t.close());
+
+describe("resend bounce webhook", () => {
+  it("is reachable without a session, ignores unknown addresses, and alerts when a user has no deliverable email", async () => {
+    const post = (to: string) => t.app.request("/webhooks/resend", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "email.bounced", data: { to: [to], bounce: { message: "hard" } } }) });
+    expect((await post("ghost@nowhere.io")).status).toBe(200);
+    const { json } = await t.signIn("only@gmail.com");
+    expect((await post("only@gmail.com")).status).toBe(200);
+    const alerts = (await t.db.select().from(schema.reviewItem)).filter((i) => i.kind === "alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.refId).toBe(json.userId);
+  });
+});
+```
+
+Mount in `app.ts`, webhooks first: `app.route("/", webhookRoutes); app.route("/", candidateRoutes); app.route("/", companyRoutes); app.route("/", adminRoutes);`
 
 - [ ] **Step 5: Run all tests**
 
 Run: `pnpm -r build && pnpm test`
-Expected: every package green; api: auth 2, candidate 4, company 2, admin 3.
+Expected: every package green; api: auth 2, candidate 4, company 2, admin 3, webhooks 1.
+
+Note: `buildDeps` reads `identity.*` config keys once at boot, so a staff edit to `identity.freemail_domains` takes effect on restart. Acceptable for this slice; recorded here so Plan 1B can switch to per-request reads if it matters.
 
 - [ ] **Step 6: Commit**
 
