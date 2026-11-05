@@ -1,0 +1,22 @@
+{
+  "name": "zenhyre-2",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "test:pkg": "turbo run test --filter",
+    "db:generate": "pnpm --filter @zenhyre/db generate",
+    "db:migrate": "pnpm --filter @zenhyre/db migrate",
+    "test:db:start": "bash scripts/test-db.sh start",
+    "test:db:stop": "bash scripts/test-db.sh stop"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  },
+  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
+}
