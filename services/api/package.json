@@ -1,0 +1,26 @@
+{
+  "name": "@zenhyre/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "zod": "^3.23.0",
+    "drizzle-orm": "^0.36.0",
+    "svix": "^1.40.0",
+    "@zenhyre/db": "workspace:*",
+    "@zenhyre/shared": "workspace:*",
+    "@zenhyre/ops": "workspace:*",
+    "@zenhyre/identity": "workspace:*",
+    "@zenhyre/notify": "workspace:*"
+  },
+  "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}
