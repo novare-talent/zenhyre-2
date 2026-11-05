@@ -4,6 +4,10 @@ import { ZodError } from "zod";
 import { AppConfig, Vars, buildDeps } from "./context";
 import { sessionUser } from "./middleware/auth";
 import { authRoutes } from "./routes/auth";
+import { candidateRoutes } from "./routes/candidate";
+import { companyRoutes } from "./routes/company";
+import { adminRoutes } from "./routes/admin";
+import { webhookRoutes } from "./routes/webhooks";
 
 export async function buildApp(cfg: AppConfig) {
   const deps = await buildDeps(cfg);
@@ -18,6 +22,10 @@ export async function buildApp(cfg: AppConfig) {
     return c.json({ error: "internal" }, 500);
   });
   app.route("/", authRoutes);
+  app.route("/", webhookRoutes);
+  app.route("/", candidateRoutes);
+  app.route("/", companyRoutes);
+  app.route("/", adminRoutes);
   // Task 12 mounts: webhookRoutes (unauthenticated) and the guarded route groups.
   // Guards are applied per path prefix inside each route file, never as `use("*")` on a
   // sub-app, because sub-app middleware registered on "*" leaks onto every later route.
