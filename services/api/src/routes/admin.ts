@@ -11,7 +11,8 @@ adminRoutes.use("/admin/*", requireUser, requireStaff);
 adminRoutes.get("/admin/reviews", async (c) => {
   const kind = c.req.query("kind") as any;
   const escapeHatchDays = c.req.query("escapeHatchDays") !== undefined ? Number(c.req.query("escapeHatchDays")) : await c.var.deps.ops.config.get("identity.escape_hatch_days");
-  const items = await c.var.deps.ops.listReviews({ kind, open: true, staffQueue: kind === "verification", escapeHatchDays });
+  const adminlessAssociationIds = kind === "verification" ? await c.var.deps.identity.associationIdsWithoutAdmins() : undefined;
+  const items = await c.var.deps.ops.listReviews({ kind, open: true, staffQueue: kind === "verification", escapeHatchDays, adminlessAssociationIds });
   return c.json({ items });
 });
 

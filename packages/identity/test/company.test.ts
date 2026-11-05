@@ -60,4 +60,16 @@ describe("association", () => {
     expect(m.associationId).toBe(assoc.id);
     expect((await id.associationsForUser(r.userId)).map((a) => a.id)).toEqual([assoc.id]);
   });
+  it("lists associations that have no admins yet; a pending invite does not count", async () => {
+    const staff = await signedIn("ops2@novaretalent.com");
+    await id.seedCampuses([{ name: "IIT Indore", shortCode: "IITI", emailDomains: ["iiti.ac.in"], rollNumberRegex: null, internalTier: 2 }]);
+    const campusId = (await id.campusByShortCode("IITI"))!.id;
+    const assoc = await id.createAssociation({ campusId, name: "IITIAA", shareRate: 0.15, payoutMode: "cash" });
+    expect(await id.associationIdsWithoutAdmins()).toEqual([assoc.id]);
+    const inv = await id.inviteAssociationAdmin({ associationId: assoc.id, invitedBy: staff.userId, email: "admin@iitiaa.org" });
+    expect(await id.associationIdsWithoutAdmins()).toEqual([assoc.id]);
+    const r = await id.redeemMagicLink(inv.token);
+    await id.acceptAssociationInvite(r.userId, r.payload as any);
+    expect(await id.associationIdsWithoutAdmins()).toEqual([]);
+  });
 });

@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, or, desc, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, or, desc, sql } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 
 type Kind = (typeof schema.reviewKind.enumValues)[number];
@@ -8,8 +8,8 @@ export interface OpenReviewInput {
 }
 export interface ListReviewsFilter {
   kind?: Kind; open?: boolean; associationId?: string;
-  /** staff queue: unscoped items plus scoped items older than escapeHatchDays */
-  staffQueue?: boolean; escapeHatchDays?: number;
+  /** staff queue: unscoped items, scoped items older than escapeHatchDays, and items scoped to adminlessAssociationIds (§6.2) */
+  staffQueue?: boolean; escapeHatchDays?: number; adminlessAssociationIds?: string[];
 }
 
 export function createReview(db: DbOrTx) {
@@ -42,7 +42,9 @@ export function createReview(db: DbOrTx) {
       if (f.staffQueue) {
         const days = f.escapeHatchDays ?? 7;
         const cutoff = sql`now() - make_interval(days => ${days})`;
-        conds.push(or(isNull(schema.reviewItem.associationId), lte(schema.reviewItem.openedAt, cutoff))!);
+        const visible = [isNull(schema.reviewItem.associationId), lte(schema.reviewItem.openedAt, cutoff)];
+        if (f.adminlessAssociationIds?.length) visible.push(inArray(schema.reviewItem.associationId, f.adminlessAssociationIds));
+        conds.push(or(...visible)!);
       }
       return db.select().from(schema.reviewItem).where(and(...conds)).orderBy(desc(schema.reviewItem.openedAt));
     },

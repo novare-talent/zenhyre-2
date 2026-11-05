@@ -36,4 +36,14 @@ describe("review items", () => {
     const rows = await ops.listAudit({ refType: "config" });
     expect(rows[0]!.action).toBe("config.set");
   });
+  it("puts scoped items in the staff queue immediately for associations with no admins (§6.2)", async () => {
+    const ops = createOps(db);
+    const assoc = "33333333-3333-3333-3333-333333333333";
+    const item = await ops.openReview({ kind: "verification", refType: "candidate", refId: "c3", associationId: assoc, payload: {} });
+    const queue = async (adminlessAssociationIds?: string[]) =>
+      (await ops.listReviews({ kind: "verification", open: true, staffQueue: true, escapeHatchDays: 7, adminlessAssociationIds })).map((i) => i.id);
+    expect(await queue()).not.toContain(item.id);
+    expect(await queue([])).not.toContain(item.id);
+    expect(await queue([assoc])).toContain(item.id);
+  });
 });

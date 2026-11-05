@@ -43,4 +43,17 @@ describe("admin", () => {
     const get = await (await t.as(cookie)("/admin/config")).json() as any;
     expect(get["match.broadcast_days"]).toBe(12);
   });
+  it("staff sees association-scoped verification items at once while the association has no admins (§6.2)", async () => {
+    await t.db.insert(schema.campus).values({ name: "IIT Delhi", shortCode: "IITD", emailDomains: ["iitd.ac.in"], rollNumberRegex: null, internalTier: 1 });
+    const cookie = await staff();
+    const created = await t.as(cookie)("/admin/associations", { method: "POST", body: JSON.stringify({ campusShortCode: "IITD", name: "IITDAA", payoutMode: "cash" }) });
+    const { association } = await created.json() as any;
+    const alum = await t.signIn("alum2@gmail.com");
+    await t.as(alum.cookie)("/candidates", { method: "POST", body: JSON.stringify({ campusShortCode: "IITD", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } }) });
+    const queue = async () => (await (await t.as(cookie)("/admin/reviews?kind=verification")).json() as any).items;
+    expect((await queue()).map((i: any) => i.associationId)).toEqual([association.id]);
+    // once the association has an admin, its items wait for the escape hatch
+    await t.db.insert(schema.associationAdmin).values({ userId: alum.json.userId, associationId: association.id });
+    expect(await queue()).toHaveLength(0);
+  });
 });

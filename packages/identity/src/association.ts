@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import { Clock } from "@zenhyre/shared";
 import { createAuth } from "./auth";
@@ -28,6 +28,13 @@ export function createAssociationModule(db: DbOrTx, clock: Clock) {
         .innerJoin(schema.association, eq(schema.association.id, schema.associationAdmin.associationId))
         .where(eq(schema.associationAdmin.userId, userId));
       return rows.map((r) => r.a);
+    },
+    /** §6.2: staff may resolve these associations' verification items without waiting for the escape hatch. */
+    async associationIdsWithoutAdmins() {
+      const rows = await db.select({ id: schema.association.id }).from(schema.association)
+        .leftJoin(schema.associationAdmin, eq(schema.associationAdmin.associationId, schema.association.id))
+        .where(isNull(schema.associationAdmin.userId));
+      return rows.map((r) => r.id);
     },
   };
 }
