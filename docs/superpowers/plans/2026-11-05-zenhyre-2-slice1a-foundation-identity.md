@@ -740,7 +740,7 @@ git add packages/db && git commit -m "feat(db): drizzle client, identity/ops/not
   "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0" }
 }
 ```
-`tsconfig.json` and `vitest.config.ts`: verbatim copies of the `db` package's files. (`notify` and `identity` in Chunk 2 use the same package.json shape with their own name and dependencies: notify adds `resend`; identity adds nothing beyond `@zenhyre/db`, `@zenhyre/shared`, `drizzle-orm`.)
+`tsconfig.json` and `vitest.config.ts`: verbatim copies of the `db` package's files. (`notify` and `identity` in Chunk 2 use the same package.json shape with their own name and dependencies: notify adds `"resend": "^4.0.0"`; identity adds nothing beyond `@zenhyre/db`, `@zenhyre/shared`, `drizzle-orm`.)
 
 - [ ] **Step 2: Failing test**
 
@@ -1200,15 +1200,18 @@ export type Channel = "email" | "in_app";
 interface Template { channels: Channel[]; subject: (d: any) => string; text: (d: any) => string }
 
 const both: Channel[] = ["email", "in_app"];
+const email: Channel[] = ["email"];
+const inApp: Channel[] = ["in_app"];
+// Every entry uses one of the three typed arrays above; an inline literal would narrow to "email"[] and break `.includes` under strict.
 export const TEMPLATES = {
-  magic_link: { channels: ["email"], subject: () => "Sign in to Zenhyre", text: (d) => `Click to sign in (valid 15 minutes): ${d.url}` },
-  company_invite: { channels: ["email"], subject: (d) => `Join ${d.companyName} on Zenhyre`, text: (d) => `${d.inviterName} invited you. Accept: ${d.url}` },
-  association_admin_invite: { channels: ["email"], subject: (d) => `Admin access for ${d.associationName} on Zenhyre`, text: (d) => `Accept: ${d.url}` },
+  magic_link: { channels: email, subject: () => "Sign in to Zenhyre", text: (d) => `Click to sign in (valid 15 minutes): ${d.url}` },
+  company_invite: { channels: email, subject: (d) => `Join ${d.companyName} on Zenhyre`, text: (d) => `${d.inviterName} invited you. Accept: ${d.url}` },
+  association_admin_invite: { channels: email, subject: (d) => `Admin access for ${d.associationName} on Zenhyre`, text: (d) => `Accept: ${d.url}` },
   add_personal_email: { channels: both, subject: () => "Add a personal email before you graduate", text: () => "Your campus email will stop working. Add a personal email to keep your Zenhyre account." },
   verification_approved: { channels: both, subject: () => "You're verified on Zenhyre", text: () => "Your alumni status is confirmed. You can now apply to roles." },
   verification_rejected: { channels: both, subject: () => "We couldn't verify your alumni status", text: (d) => `Reason: ${d.reason}. You may request verification once more.` },
   role_nudge: { channels: both, subject: (d) => `A role that fits you: ${d.roleTitle}`, text: (d) => `${d.companyName} is hiring. ${d.url}` },
-  application_received: { channels: ["in_app"], subject: (d) => `Applied: ${d.roleTitle}`, text: () => "" },
+  application_received: { channels: inApp, subject: (d) => `Applied: ${d.roleTitle}`, text: () => "" },
   stage_changed: { channels: both, subject: (d) => `Update on ${d.roleTitle}`, text: (d) => `Status: ${d.stage}` },
   role_accepted: { channels: both, subject: (d) => `Role accepted: ${d.roleTitle}`, text: () => "Fee terms will follow shortly." },
   role_rejected: { channels: both, subject: (d) => `Role not accepted: ${d.roleTitle}`, text: (d) => `Reason: ${d.reason}. You may appeal once within 14 days.` },
@@ -2007,7 +2010,11 @@ git add packages/identity && git commit -m "feat(identity): company onboarding, 
   "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
 }
 ```
-`tsconfig.json` and `vitest.config.ts`: same as `packages/shared` (tsconfig `include: ["src", "test"]`).
+`services/api/tsconfig.json` (no `rootDir`/`outDir`: the API is run by tsx, never emitted, and tests live outside `src`):
+```json
+{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src", "test"] }
+```
+`services/api/vitest.config.ts`: verbatim copy of the `db` package's file.
 
 - [ ] **Step 1: Test helper and failing test**
 
@@ -2638,8 +2645,8 @@ webhookRoutes.post("/webhooks/resend", async (c) => {
   } else {
     payload = JSON.parse(raw); // tests and local dev run without a secret
   }
+  if ((payload as { type?: string })?.type !== "email.bounced") return c.json({ ok: true }); // other subscribed events: ack, don't validate
   const body = bounceEvent.parse(payload);
-  if (body.type !== "email.bounced") return c.json({ ok: true });
   const { notify, identity, ops } = c.var.deps;
   for (const email of body.data.to) {
     const userId = await identity.userIdForEmail(email);
@@ -2653,7 +2660,6 @@ webhookRoutes.post("/webhooks/resend", async (c) => {
 });
 ```
 
-Add `webhookSecret?: string` to `AppConfig` in `context.ts`, and read it from `RESEND_WEBHOOK_SECRET` in `src/index.ts`.
 
 `services/api/test/webhooks.test.ts`:
 ```ts
@@ -2679,7 +2685,18 @@ describe("resend bounce webhook", () => {
 });
 ```
 
-Mount in `app.ts`, webhooks first: `app.route("/", webhookRoutes); app.route("/", candidateRoutes); app.route("/", companyRoutes); app.route("/", adminRoutes);`
+Mount in `app.ts`, webhooks first. Add the imports and the four route lines after `app.route("/", authRoutes);`:
+```ts
+import { candidateRoutes } from "./routes/candidate";
+import { companyRoutes } from "./routes/company";
+import { adminRoutes } from "./routes/admin";
+import { webhookRoutes } from "./routes/webhooks";
+// ...
+app.route("/", webhookRoutes);
+app.route("/", candidateRoutes);
+app.route("/", companyRoutes);
+app.route("/", adminRoutes);
+```
 
 - [ ] **Step 5: Run all tests**
 
