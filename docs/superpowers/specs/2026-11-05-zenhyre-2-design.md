@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-05
 **Author:** Sahil Sheoran (Novare Talent), with Claude
-**Status:** Draft for review (rev 5)
+**Status:** Reviewed (rev 6) — awaiting founder sign-off
 
 ## 1. Purpose
 
@@ -80,7 +80,8 @@ zenhyre-2/
 - **Claude API** for CV parsing, the gate's model pass, and the matching rerank. All calls go through `packages/shared/llm.ts`, which validates structured output and supports recorded fixtures for tests.
 - **Razorpay** for deposits and refunds.
 - **Resend** for transactional email. In-app notifications stored in Postgres.
-- Auth: magic-link email (no passwords), 15-minute single-use links. Sessions as HTTP-only cookies. One `User` can have many emails.
+- Auth: magic-link email (no passwords), 15-minute single-use links stored in `MagicLinkToken`. Server-backed sessions (`Session` table) as HTTP-only cookies. One `User` can have many emails.
+- Object storage for CV uploads: S3-compatible bucket (Cloudflare R2 by default); `cv_url` is a signed URL.
 - Hosting: Vercel for the apps, Railway or Fly for the API + Postgres. Decided at implementation.
 
 ### 3.3 Module boundaries
@@ -98,16 +99,17 @@ Named workflows:
 | `saveProfile` | profile save | identity; enqueues `matching.embed_candidate` |
 | `resolveVerification` | association admin or staff | identity, ops, trust (`profile_false` on reject-with-fraud), notify |
 | `submitRole` | company submit | roles; enqueues gate job |
-| `gateDecision` | gate job / staff review | roles, gate, ops, trust (`appeal_rejected`), notify |
+| `gateDecision` | gate job / staff review | roles, gate, ops, trust (`appeal_rejected`), notify. No-op if the role is no longer `gated` (withdrawn mid-flight) |
 | `acceptTerms` | company accepts | roles, ledger (Razorpay order) or staff waiver path |
-| `depositCaptured` | Razorpay webhook | ledger, roles; enqueues `broadcastRole` |
+| `depositCaptured` | Razorpay webhook | ledger, roles (`→ broadcast`, `broadcast_opens_at`, `broadcast_closes_at = opens + match.broadcast_days`); enqueues `broadcastRole` |
 | `broadcastRole` | job | roles, identity (candidates), matching, notify |
 | `extendBroadcast` | staff | roles, notify |
 | `applyToRole` | candidate | matching, ops (`candidate_approval` when restricted), notify |
 | `resolveCandidateApproval` | staff | matching, ops |
 | `freezeShortlist` | `role.close_broadcast` job | matching, roles, notify |
 | `companyAction` | every company stage action | matching, trust (`interview_no_show`, `offer_reneged`), notify; delegates to `recordHire` / `didNotJoin` / `leftEarly` for those stages |
-| `candidateWithdraw` | candidate | matching, trust (`offer_reneged` when from `offer_accepted`) |
+| `candidateWithdraw` | candidate | matching, trust (`offer_reneged` when from `offer_accepted`), notify (`stage_changed` to company) |
+| `waiveDeposit` | staff | roles (`deposit_mode = waived`, `deposit_pending → broadcast`, `broadcast_opens_at`, `broadcast_closes_at = opens + match.broadcast_days`); enqueues `broadcastRole` |
 | `recordHire` | company marks hired | matching, ledger, trust, roles, notify |
 | `confirmJoin` | `did_you_join` answer, company response to a dispute, staff dispute resolution, or `role.join_grace` | matching, trust (`joined`), ops (dispute), notify |
 | `didNotJoin` | company, or `confirmJoin` outcome | ledger, matching, roles, ops, notify |
@@ -116,7 +118,7 @@ Named workflows:
 | `resolveDepositReview` | staff resolves a `deposit_resolution` item | ledger, ops, roles, notify; calls `closeRole` on forfeit |
 | `refundProcessed` | Razorpay webhook | ledger, notify; calls `closeRole` only when the role is `closing` with `hired_match_id` null |
 | `closeRole` | `resolveDeposit`, `resolveDepositReview`, `refundProcessed`, `guaranteeExpiry`, `withdrawRole` | roles (→ `closed` / `withdrawn`), matching (`closeOpenMatches`), notify |
-| `guaranteeExpiry` | `role.guarantee_expiry` job | calls `closeRole` |
+| `guaranteeExpiry` | `role.guarantee_expiry` job | calls `closeRole`; skips roles whose hired match has `join_confirmed_at` null or an open `join_dispute` |
 | `reconcileFee` | staff | ledger, trust (`fee_paid_on_time`), notify |
 | `selfReportAnswer` | candidate | trust, ops |
 | `confirmLeakage` | staff | ledger, matching (override), trust |
@@ -124,15 +126,15 @@ Named workflows:
 | `releaseTerms` | staff or `role.terms_auto_release` | roles, notify |
 | `banCompany` / `liftBan` | any workflow whose `trust.recompute` crosses the ban threshold, or staff | identity, roles, matching, ledger |
 | `blockCandidate` | any workflow whose `trust.recompute` crosses the block threshold | identity, matching |
-| `withdrawRole` | company or `role.terms_timeout` | roles, matching, ledger (via `resolveDeposit`), notify |
+| `withdrawRole` | company or `role.terms_timeout` | roles (`→ withdrawn`), matching (`closeOpenMatches`), then `resolveDeposit`, notify. `closeRole` is a status no-op on an already-terminal role |
 | `mergeCompanies` | staff | identity, roles |
 | `nightlyTrust` | job | trust, identity (status writes), ledger (overdue scan), matching (prompt-action scan) |
 
 | Module | Owns tables | Exposes |
 |---|---|---|
 | `ops` | ReviewItem, ConfigValue, StaffAction | `openReview`, `resolveReview`, `listReviews`, `config.get/set`, `audit(actor, action, ref)` |
-| `identity` | Campus, User, UserEmail, Candidate, Company, CompanyUser, Association, AssociationAdmin | `createCandidate`, `createCompany`, `verifyCandidate`, `rejectVerification`, `setCandidateOpen`, `saveProfile`, `listMatchableCandidates(filter)`, `getCandidate`, `getCompany`, `setCompanyStatus`, `setCandidateTrustStatus`, `inviteCompanyUser`, `inviteAssociationAdmin`, `lockCompanyUsers`, `mergeCompanies` |
-| `roles` | Role, RoleEvent, RoleGateDecision, Referral, ReferralAttribution | `create`, `submit`, `get`, `update(roleId, data)` (non-status fields: `hired_match_id`, `broadcast_*`, `deposit_*`, `refund_owed`, `job_error`), `transition(roleId, to, actor, note)`, `appeal`, `recordGateDecision`, `setFeeTerms`, `releaseTerms`, `acceptTerms`, `extendBroadcast`, `createReplacement`, `createReferral`, `recordReferralAttribution`, `attributionFor(candidateId, roleId)` |
+| `identity` | Campus, User, UserEmail, MagicLinkToken, Session, Candidate, Company, CompanyUser, Association, AssociationAdmin | `issueMagicLink`, `redeemMagicLink`, `createCandidate`, `createCompany`, `verifyCandidate`, `rejectVerification`, `clearRollNumberFlag`, `setCandidateStatus`, `setCandidateOpen`, `saveProfile`, `listMatchableCandidates(filter)`, `getCandidate`, `getCompany`, `setCompanyStatus`, `setCandidateTrustStatus`, `inviteCompanyUser`, `inviteAssociationAdmin`, `lockCompanyUsers`, `mergeCompanies` |
+| `roles` | Role, RoleEvent, RoleGateDecision, Referral, ReferralAttribution | `create`, `submit`, `get`, `update(roleId, data)` (any non-status field: draft content while `draft`, `campus_reach` by staff at gate, `hired_match_id`, `broadcast_*`, `deposit_*`, `refund_owed`, `job_error`), `transition(roleId, to, actor, note)`, `appeal`, `recordGateDecision`, `setFeeTerms`, `releaseTerms`, `acceptTerms`, `extendBroadcast`, `createReplacement`, `createReferral`, `recordReferralAttribution`, `attributionFor(candidateId, roleId)` |
 | `gate` | — (pure) | `evaluateRules(role, config) → GateOutcome`, `evaluateModel(role, config) → GateOutcome` |
 | `matching` | Match, MatchEvent | `embedCandidate`, `embedRole`, `broadcast(roleId, candidates)`, `canApply(role, candidate)`, `apply(roleId, candidateId)`, `rerank(roleId)`, `freeze(roleId)`, `setStage(matchId, stage, actor, data)`, `closeOpenMatches(roleId)`, `declineOpenMatches(candidateId)`, `engagedShortlistFraction(roleId)`, `listShortlist(roleId)`, `listOpenRolesFor(candidate)` |
 | `ledger` | LedgerEntry | `record(entry)`, `depositHeld(roleId)`, `feeOutstanding(matchId)`, `associationBalance(associationId)`, `pendingRefunds()`, `overdueInvoices()` |
@@ -152,11 +154,11 @@ Core entities (Postgres tables; snake_case in the schema).
 **User**: id, created_at, is_staff (bool). Other roles are derived from membership rows (Candidate, CompanyUser, AssociationAdmin).
 **UserEmail**: user_id, email, verified_at, is_primary, campus_id (set when domain matches a campus), bounce_count.
 
-**Candidate**: user_id, campus_id, grad_date (date), course, roll_number (nullable), roll_number_flag (bool), status (`student` | `final_year` | `alumnus`), verification_state (`verified` | `referral_pending` | `verification_pending` | `rejected`), verification_attempts (int), verification_source (`campus_email` | `referral` | `association` | `staff`), verified_by (user_id or `system`), verified_at, open_to_opportunities (bool), trust_status (`ok` | `restricted` | `blocked`), profile JSON, embedding vector(1536), embedding_updated_at, name_visible_to_association (bool, default false).
+**Candidate**: user_id, campus_id, grad_date (date), course, roll_number (nullable), roll_number_flag (bool), status (`student` | `final_year` | `alumnus`; derived from `grad_date` at creation and nightly), verification_state (`verified` | `referral_pending` | `verification_pending` | `rejected`), verification_attempts (int), verification_source (`campus_email` | `referral` | `association` | `staff`), verified_by (user_id or `system`), verified_at, open_to_opportunities (bool, default true), trust_status (`ok` | `restricted` | `blocked`; default `ok`), profile JSON, embedding vector(1536), embedding_updated_at, name_visible_to_association (bool, default false).
 
 `profile` JSON fields: headline, skills[], years_experience (decimal), current_company, current_title, preferred_roles[], preferred_locations[], notice_period_days, current_ctc (optional), linkedin_url, cv_url, parsed_cv JSON.
 
-**Company**: id, name, verified_domain, status (`active` | `probation` | `banned`), status_changed_at, created_at.
+**Company**: id, name, verified_domain, status (`active` | `probation` | `banned`; default `active`), status_changed_at, created_at.
 **CompanyUser**: user_id, company_id, role (`owner` | `member`), invited_by, joined_at, locked_at (nullable).
 
 **Association**: id, campus_id, name, contacts JSON, share_rate (decimal, default 0.15), payout_mode (`cash` | `sponsorship_credit`), mou_signed_at. (One association per campus; `Campus` has no back-reference.)
@@ -272,7 +274,7 @@ any open state ─→ withdrawn
 | `rejected` | Gate rejected | `appealRole` once, within 14 days → `gated`; otherwise terminal |
 | `terms_pending` | Gate accepted; fee terms prefilled | Staff release terms (or auto-release 48h later) → company sees them; company accepts → `deposit_pending`; no acceptance within 14 days of release → `withdrawn` (auto); withdraw |
 | `deposit_pending` | Terms accepted; Razorpay order created (amount × probation multiplier if applicable) | `deposit_mode = razorpay`: `payment.captured` webhook → `broadcast`. `deposit_mode = waived`: staff `transition` with a note → `broadcast`. Nothing else. Withdraw |
-| `broadcast` | Deposit resolved; `broadcast_opens_at` set | `broadcast_closes_at` reached (default 10 days; staff `extendBroadcast` once by 7 days if <10 applicants) → `shortlist_ready`; withdraw |
+| `broadcast` | Deposit captured or waived (`broadcast_opens_at` set, `broadcast_closes_at = opens + match.broadcast_days`), or a replacement role created here (`RoleEvent.from_status = null`) | `broadcast_closes_at` reached (default 10 days; staff `extendBroadcast` once by 7 days if <10 applicants) → `shortlist_ready`; withdraw |
 | `shortlist_ready` | Window closed, shortlist frozen; `shortlist_ready_at` set | Hire recorded (`hired_match_id`, `hired_at` set) → `closing`; `shortlist_ready_at + 30 days` with no hire → `closing`; withdraw |
 | `closing` | Hire recorded or role abandoned | **With a hire**: stays until the guarantee window ends (`joined_on + replacement_guarantee_days`, `guaranteeExpiry`) → `closed`; `didNotJoin` → `shortlist_ready` (reopen: `hired_match_id`, `hired_at` cleared, `shortlist_ready_at` reset). **Without a hire**: `closeRole` after `resolveDeposit` / `resolveDepositReview` / `refundProcessed` (§9.1) → `closed`. No withdraw. Under a ban, continues to resolve |
 | `closed` | Terminal | — (`confirmLeakage` may still override a match to `hired` on a closed role; the role stays `closed`) |
@@ -280,7 +282,7 @@ any open state ─→ withdrawn
 
 **Replacement roles** (`roles.createReplacement`, from `leftEarly`): a copy of the original's title, JD, type, CTC band, reach, and `fee_terms` with amount 0, `deposit_mode = waived`, `replacement_of_role_id` set, created directly in `broadcast` (gate and terms are inherited from the original, which already passed them); `broadcastRole` is enqueued. From there it follows the normal lifecycle. A hire on a replacement role writes no `fee_due` and no `company.hire_closed`.
 
-Every transition writes a `RoleEvent`. `closeRole` is the only path into `closed` and the final step of `withdrawRole`; it calls `matching.closeOpenMatches`, which moves open-stage matches to `role_closed` (settled stages, including `hired`, are untouched). `deposit_mode = waived` is used for Slice 1 (before Razorpay exists), replacement roles, and staff-approved offline payments; it always requires a staff actor and a note.
+Every transition writes a `RoleEvent`. `closeRole` is the only path into `closed` and the final step of `withdrawRole`; it calls `matching.closeOpenMatches`, which moves open-stage matches to `role_closed` (settled stages, including `hired`, are untouched). `deposit_mode = waived` is used for Slice 1 (before Razorpay exists), replacement roles, and staff-approved offline payments; the `deposit_pending → broadcast` waiver transition (`waiveDeposit`) always requires a staff actor and a note.
 
 ## 6. Identity and onboarding
 
@@ -339,7 +341,7 @@ A rules reject is instant and names the rule. A pass goes to stage 2.
 2. **Filter.** `identity.listMatchableCandidates` returns candidates where `open_to_opportunities`, `verification_state = verified`, `trust_status ≠ blocked`, `campus_id ∈ campus_reach`, and status fits type: intern → `student` or `final_year`; fresher → `final_year`, or `alumnus` with `years_experience ≤ 1`; experienced → `alumnus` with `years_experience` in `[years_exp_min, years_exp_max]`.
 3. **Score.** Cosine similarity selects the top 200. A Claude rerank over those applies a structured rubric (skills, seniority, domain, location) and returns `fit_score` and a one-line `fit_reason` per candidate. A `Match(stage=scored)` row is written for each.
 4. **Nudge.** Top `nudge_cap` by `fit_score` with `trust_status = ok` get email + in-app. The same hour, every association whose campus is in reach gets the role brief and a `Referral` link (Slice 2 onwards).
-5. **Apply.** `matching.listOpenRolesFor(candidate)` is what the candidate app shows: roles in `broadcast` whose `campus_reach` includes the candidate's campus and whose type fits the candidate's status (as in step 2), plus any role a `referral_pending` candidate arrived through. `matching.canApply` enforces the same, plus `trust_status ≠ blocked` and `verification_state ∈ {verified, referral_pending}`; `open_to_opportunities` is not required to apply. Candidate applies → `applied`, `applied_at` set. Candidates outside the scored set are scored on apply. `trust_status = restricted` candidates go to `pending_approval` with a `candidate_approval` ReviewItem; `resolveCandidateApproval` returns them to `applied` (then ranked if the role is still `broadcast`; after freeze they stay `applied` in the longlist) or `declined_by_staff`. Applicants with `verification_state = verified` are ranked by `fit_score`; the top `shortlist_cap` are `shortlisted` with `rank` set. A new higher-scoring applicant displaces the lowest (`shortlisted → applied`, rank cleared, `MatchEvent` written). Displaced candidates remain visible to staff in the longlist.
+5. **Apply.** `matching.listOpenRolesFor(candidate)` is what the candidate app shows: roles in `broadcast` whose `campus_reach` includes the candidate's campus and whose type fits the candidate's status (as in step 2), plus any role a `referral_pending` candidate arrived through. `matching.canApply` enforces the same, plus `trust_status ≠ blocked` and `verification_state ∈ {verified, referral_pending}`; `open_to_opportunities` is not required to apply. Candidate applies → `applied`, `applied_at` set. Candidates outside the scored set are scored on apply. `trust_status = restricted` candidates go to `pending_approval` with a `candidate_approval` ReviewItem; `resolveCandidateApproval` returns them to `applied` (then ranked if the role is still `broadcast`; after freeze they stay `applied` in the longlist) or `declined_by_staff`. Applicants with `verification_state = verified` are ranked by `fit_score`; the top `shortlist_cap` are `shortlisted` with `rank` set. A new higher-scoring applicant displaces the lowest (`shortlisted → applied`, rank cleared, `MatchEvent` written). While the role is `broadcast`, `rerank(roleId)` runs after every apply, withdrawal, verification, or approval and refills the shortlist to `shortlist_cap` from the highest-scoring verified `applied` candidates. Displaced candidates remain visible to staff in the longlist.
 6. **Freeze.** At `broadcast_closes_at`, `freezeShortlist` closes applications and freezes ranks; the role moves to `shortlist_ready`; the company is notified. Late verifications after freeze do not enter the shortlist.
 
 **Company view.** Ranked shortlist, profile, `fit_reason`, and actions per the §4.3 transition table: view, interview, offer (requires `offered_ctc`), mark offer accepted, mark offer reneged, hired (requires `hired_ctc` and `joined_on`), reject (requires `rejection_category`, optional note), did not join, left early. Every action goes through `companyAction`, which enforces the §4.3 role precondition and one-hire rule, calls `matching.setStage`, and then any ledger or trust writes the transition requires, in one transaction. The shortlist is not visible to the company before `shortlist_ready`.
@@ -387,7 +389,7 @@ A `closing` role without a hire moves to `closed` (via `closeRole`) when `deposi
 - **No answer** from the candidate for `fee.join_grace_days` (7) after `join_prompt_sent_at` → `join_confirmed_at` set (`by = grace`), `candidate.joined` written.
 - Company marks **did not join** directly (before `join_confirmed_at`) → `didNotJoin` immediately.
 
-**`didNotJoin`**, in this order: (1) `deposit_application_reversed` for the applied amount, with matching `association_share_reversed` (§9.3); (2) `fee_refunded` for any `fee_paid` already collected (actual bank refund is a staff task; the entry records the obligation and opens an `alert`), with `association_share_reversed`; (3) `fee_voided` for `feeOutstanding` (now equal to `fee_due`); (4) match → `did_not_join`; (5) role → `shortlist_ready` (reopen per §5), so the company can hire another shortlisted candidate; the deposit, now held again, resolves under §9.1 or a new `recordHire`. In Slice 1 only steps 4–5 run.
+**`didNotJoin`** (requires the role to be `closing`), in this order: (1) `deposit_application_reversed` for the applied amount, with matching `association_share_reversed` (§9.3); (2) `fee_refunded` for any `fee_paid` already collected (actual bank refund is a staff task; the entry records the obligation and opens an `alert`), with `association_share_reversed`; (3) `fee_voided` for `feeOutstanding` (now equal to `fee_due`); (4) match → `did_not_join`; (5) role → `shortlist_ready` (reopen per §5), so the company can hire another shortlisted candidate; the deposit, now held again, resolves under §9.1 or a new `recordHire`. In Slice 1 only steps 4–5 run.
 
 **Left early.** Company marks `left_early` (after `join_confirmed_at`, within `replacement_guarantee_days`) → `leftEarly`: the fee stands (no ledger entries); `roles.createReplacement` makes the replacement role per §5; the original role proceeds to `closed` via `guaranteeExpiry`.
 
@@ -463,7 +465,8 @@ Signals, cheapest first. Every signal opens a `leakage` ReviewItem; staff confir
 | `verification_approved` / `verification_rejected` (with reason) | candidate | email + in-app |
 | `role_nudge` | candidate | email + in-app |
 | `application_received` | candidate | in-app |
-| `stage_changed` | candidate | email + in-app |
+| `stage_changed` | candidate (on `shortlisted`, `interviewed`, `offered`, `rejected`, `declined_by_staff`, `role_closed`; not `viewed` or displacement) / company (on `withdrawn`, `offer_reneged`) | email + in-app |
+| `hire_recorded` / `role_closed` / `replacement_created` | company | email + in-app |
 | `self_report_prompt` (30/90d) | candidate | email + in-app |
 | `did_you_join` | candidate | email + in-app |
 | `role_accepted` / `role_rejected` (with reason) / `role_needs_review` | company | email + in-app |
@@ -506,7 +509,7 @@ Queues (views over `ReviewItem`): gate review, verification (unscoped items plus
 
 ## 15. Build order
 
-1. **Slice 1 — Core loop, no money.** `db`, `shared`, `ops`, auth, `identity` (student sign-up, profile, company sign-up, invites, merge), `roles` + `gate`, `matching`, `notify`, candidate app, company portal (post role, accept terms, shortlist actions including hired / did-not-join / left-early), admin console (gate queue, verification queue, join-dispute queue, role transitions incl. waiver and extension; config editor). All roles use `deposit_mode = waived`; `resolveDeposit` is the `depositHeld = 0` no-op; `recordHire` runs only its matching/role steps; `didNotJoin` runs only its matching/role steps; staff record deposits and fees outside the system. **Excluded from Slice 1:** Razorpay, `ledger`, `trust`, the candidate-approval queue (no candidate can be `restricted` without `trust`), the association portal, referral links (§6.1 referral paths, §8 step 4 association brief), and all association templates. Alumni in Slice 1 are verified by staff via the escape hatch.
+1. **Slice 1 — Core loop, no money.** `db`, `shared`, `ops`, auth, `identity` (student sign-up, profile, company sign-up, invites, merge), `roles` + `gate`, `matching`, `notify`, candidate app, company portal (post role, accept terms, shortlist actions including hired / did-not-join / left-early), admin console (gate queue, verification queue, join-dispute queue, alerts queue, role transitions incl. waiver and extension, fee-terms edit and release; config editor). All roles use `deposit_mode = waived`; `resolveDeposit` is the `depositHeld = 0` no-op; `recordHire` runs only its matching/role steps; `didNotJoin` runs only its matching/role steps; staff record deposits and fees outside the system. **Excluded from Slice 1:** Razorpay, `ledger`, `trust`, the candidate-approval queue (no candidate can be `restricted` without `trust`), the association portal, referral links (§6.1 referral paths, §8 step 4 association brief), and all association templates. Alumni in Slice 1 are verified by staff via the escape hatch.
 2. **Slice 2 — Ledger.** Razorpay deposit and refund webhooks, `resolveDeposit`, full `recordHire` / `didNotJoin` / `leftEarly`, invoice, reconciliation, association portal, referral links, attribution, payouts, statements.
 3. **Slice 3 — Trust.** Trust events, score, status materialisation, candidate-approval queue, `banCompany` / `liftBan`, leakage signals, leakage queue, `confirmLeakage`.
 4. **Migration.** Import 1.0 users and assessed candidates; invite them to complete 2.0 profiles.
