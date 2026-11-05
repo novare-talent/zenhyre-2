@@ -174,7 +174,8 @@ git add -A && git commit -m "chore: monorepo scaffold"
 ```bash
 #!/usr/bin/env bash
 # Starts/stops a throwaway Postgres 16 cluster on port 5433 for tests.
-# Postgres refuses to run as root, so when invoked as root the server runs as the `postgres` system user.
+# Postgres refuses to run as root, so when invoked as root the server runs as the `postgres` system user,
+# which must be able to traverse every parent directory of the repo (755). A 700 home directory will fail here.
 set -euo pipefail
 PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -626,7 +627,7 @@ export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbOrTx = Db | Tx;
 
 export function createDb(url = process.env.DATABASE_URL!): { db: Db; close: () => Promise<void> } {
-  const client = postgres(url, { max: 10 });
+  const client = postgres(url, { max: 10, onnotice: () => {} });
   return { db: drizzle(client, { schema }), close: () => client.end() };
 }
 
@@ -976,13 +977,15 @@ export interface ListReviewsFilter {
 
 export function createReview(db: DbOrTx) {
   return {
+    /** Idempotent per open kind+ref. The partial unique index makes the insert race-safe; on conflict we re-select. */
     async openReview(input: OpenReviewInput) {
-      const [existing] = await db.select().from(schema.reviewItem).where(and(
+      const openFor = () => db.select().from(schema.reviewItem).where(and(
         eq(schema.reviewItem.kind, input.kind), eq(schema.reviewItem.refType, input.refType),
         eq(schema.reviewItem.refId, input.refId), isNull(schema.reviewItem.resolvedAt)));
-      if (existing) return existing;
-      const [row] = await db.insert(schema.reviewItem).values(input).returning();
-      return row!;
+      const [inserted] = await db.insert(schema.reviewItem).values(input).onConflictDoNothing().returning();
+      if (inserted) return inserted;
+      const [existing] = await openFor();
+      return existing!;
     },
     async resolveReview(id: string, resolvedBy: string, resolution: string) {
       const [row] = await db.update(schema.reviewItem)
