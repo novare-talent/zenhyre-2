@@ -1001,7 +1001,7 @@ git add packages/ops && git commit -m "feat(ops): review items with association 
 
 ---
 
-## Chunk 2: Identity, notify, API
+## Chunk 2: Notify and identity
 
 ### File structure for Chunk 2
 
@@ -1021,7 +1021,12 @@ packages/identity/
   test/auth.test.ts
   test/candidate.test.ts
   test/company.test.ts
-services/api/
+```
+
+(Chunk 3 covers `services/api`.)
+
+```
+services/api/   (Chunk 3)
   src/index.ts               Hono app factory + server entry
   src/context.ts             AppDeps: db, ops, identity, notify, clock
   src/middleware/auth.ts     session cookie → c.var.user
@@ -1830,6 +1835,10 @@ Update `packages/identity/src/index.ts` to spread `createCompanyModule(db, clock
 ```bash
 git add packages/identity && git commit -m "feat(identity): company onboarding, invites, lock/merge, associations"
 ```
+
+---
+
+## Chunk 3: API service
 
 ### Task 11: `services/api` — app factory, auth middleware, auth routes
 
