@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { testDb } from "@zenhyre/db/test";
 import { schema } from "@zenhyre/db";
-import { createNotify, MemoryTransport } from "../src/index";
+import { createNotify, MemoryTransport, ConsoleTransport } from "../src/index";
 
 let db: any, close: () => Promise<void>;
 beforeAll(async () => ({ db, close } = await testDb()));
@@ -50,5 +50,17 @@ describe("notify", () => {
     const before = t.sent.length;
     await notify.send(uid, "application_received", { roleTitle: "SDE" });
     expect(t.sent.length).toBe(before);
+  });
+  it("console transport prints the email, link included, instead of sending it", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const notify = createNotify(db, new ConsoleTransport());
+      await notify.sendToEmail("dev@iitb.ac.in", "magic_link", { url: "http://localhost:4000/auth/redeem?t=abc" });
+      const printed = log.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(printed).toContain("dev@iitb.ac.in");
+      expect(printed).toContain("http://localhost:4000/auth/redeem?t=abc");
+    } finally {
+      log.mockRestore();
+    }
   });
 });

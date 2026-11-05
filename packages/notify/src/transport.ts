@@ -6,6 +6,11 @@ export class MemoryTransport implements Transport {
   async send(mail: OutgoingEmail) { this.sent.push(mail); }
 }
 
+/** Dev only: nothing is delivered; each email (sign-in and invite links included) is printed to the server log. */
+export class ConsoleTransport implements Transport {
+  async send(mail: OutgoingEmail) { console.log(`[email] to ${mail.to} | ${mail.subject}\n${mail.text}`); }
+}
+
 export class ResendTransport implements Transport {
   constructor(private apiKey: string, private from: string) {}
   async send(mail: OutgoingEmail) {
