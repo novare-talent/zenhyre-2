@@ -110,7 +110,13 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
       }
       return n;
     },
+    /** For modules downstream of identity (matching) that hold candidate ids and need their current state. */
+    async listCandidatesByIds(userIds: string[]) {
+      if (!userIds.length) return [];
+      return db.select().from(schema.candidate).where(inArray(schema.candidate.userId, userIds));
+    },
     async listMatchableCandidates(f: { campusIds: string[]; statuses: Status[]; minYears?: number; maxYears?: number }) {
+      if (!f.campusIds.length || !f.statuses.length) return [];
       const conds = [
         eq(schema.candidate.openToOpportunities, true),
         eq(schema.candidate.verificationState, "verified"),
