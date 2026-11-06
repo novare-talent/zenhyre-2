@@ -281,6 +281,25 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
       if (!row) throw new Invalid("this broadcast has already been extended once");
       return row;
     },
+    /**
+     * §5 replacement role, for a hire who left inside the guarantee: a copy of the original's content and reach with a
+     * zero fee and a waived deposit, created directly in `broadcast`. Gate and terms are inherited from the original.
+     */
+    async createReplacement(roleId: string, actor: Actor, opts: { broadcastDays: number }): Promise<Role> {
+      const o = await must(roleId);
+      if (!o.feeTerms) throw new Invalid("only a role with fee terms can be replaced");
+      if (!(opts.broadcastDays > 0)) throw new Invalid("opening a broadcast needs its length in days");
+      const now = clock.now();
+      const [row] = await db.insert(schema.role).values({
+        companyId: o.companyId, createdBy: o.createdBy, createdAt: now, title: o.title, jd: o.jd, type: o.type, ctcMin: o.ctcMin, ctcMax: o.ctcMax,
+        yearsExpMin: o.yearsExpMin, yearsExpMax: o.yearsExpMax, locations: o.locations, campusReach: o.campusReach,
+        shortlistCap: o.shortlistCap, nudgeCap: o.nudgeCap, finalGateDecisionId: o.finalGateDecisionId,
+        feeTerms: { ...o.feeTerms, amount: 0 }, feeTermsReleasedAt: o.feeTermsReleasedAt, feeTermsAcceptedAt: o.feeTermsAcceptedAt,
+        depositAmount: 0, depositMode: "waived", status: "broadcast", broadcastOpensAt: now,
+        broadcastClosesAt: new Date(now.getTime() + opts.broadcastDays * DAY_MS), replacementOfRoleId: o.id }).returning();
+      await db.insert(schema.roleEvent).values({ roleId: row!.id, fromStatus: null, toStatus: "broadcast", actor: actorRef(actor), note: `replacement for role ${o.id}`, at: now });
+      return row!;
+    },
     /** shortlist_ready → closing, recording the one hire. */
     recordHire(roleId: string, matchId: string, actor: Actor) {
       return transition(roleId, "closing", actor, null, { hiredMatchId: matchId });

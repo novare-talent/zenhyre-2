@@ -44,7 +44,8 @@ export function companyRoleView(role: Role, extra: { gate: RoleGateDecision | nu
     depositAmount: role.depositAmount, depositMode: role.depositMode,
     broadcastOpensAt: role.broadcastOpensAt, broadcastClosesAt: role.broadcastClosesAt,
     shortlistReadyAt: role.shortlistReadyAt, shortlistCap: role.shortlistCap,
-    hiredMatchId: role.hiredMatchId, hiredAt: role.hiredAt, applicants: extra.applicants, createdAt: role.createdAt,
+    hiredMatchId: role.hiredMatchId, hiredAt: role.hiredAt, replacementOfRoleId: role.replacementOfRoleId,
+    applicants: extra.applicants, createdAt: role.createdAt,
   };
 }
 

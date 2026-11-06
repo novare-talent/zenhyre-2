@@ -134,3 +134,62 @@ describe("confirmJoin (§9.2)", () => {
     expect((await w.row(byCompany.roleId)).status).toBe("shortlist_ready");
   });
 });
+
+describe("leftEarly (§9.2: the fee stands and a replacement role is broadcast)", () => {
+  let w: World, a: Seat, b: Seat, c: Seat;
+  beforeAll(async () => {
+    w = await world();
+    [a, b, c] = [await w.candidate("a", 80), await w.candidate("b", 70), await w.candidate("c", 60)];
+  });
+  afterAll(() => w.t.close());
+
+  it("needs a confirmed joining, creates the replacement in broadcast, and the original still closes on its guarantee", async () => {
+    const title = "Engineer, left";
+    const first = await w.shortlisted(title, [a]);
+    await w.hire(first.match[a.email]!, "2026-11-06");
+    const second = await w.shortlisted("Engineer, stayed", [c]);
+    await w.hire(second.match[c.email]!, "2026-11-06");
+    const matchId = first.match[a.email]!;
+
+    const early = await w.act(matchId, { stage: "left_early" });
+    expect(early.status).toBe(409);
+    expect((await body(early)).message).toMatch(/not been confirmed/);
+    w.t.clock.set("2026-11-06T00:00:00Z");
+    expect(await w.runJob("role.join_prompt")).toMatchObject({ roles: 2 });
+    for (const [s, id] of [[a, matchId], [c, second.match[c.email]!]] as const) expect((await s.req(`/me/applications/${id}/join`, post({ joined: true }))).status).toBe(200);
+
+    w.t.clock.advance(20 * DAY);
+    const res = await w.act(matchId, { stage: "left_early" });
+    expect(res.status).toBe(200);
+    const out = await body(res);
+    expect(out.match.stage).toBe("left_early");
+    expect(out.role).toMatchObject({ id: first.id, status: "closing", hiredMatchId: matchId });
+    // §5: same content and reach, zero fee, waived deposit, straight into broadcast.
+    expect(out.replacement).toMatchObject({ title, status: "broadcast", replacementOfRoleId: first.id, depositMode: "waived", depositAmount: 0,
+      feeTerms: { kind: "percent", amount: 0, replacement_guarantee_days: 90 }, campusReach: out.role.campusReach, jd: out.role.jd,
+      broadcastOpensAt: w.t.clock.now().toISOString(), broadcastClosesAt: new Date(w.t.clock.now().getTime() + 10 * DAY).toISOString() });
+    const replacementId = out.replacement.id as string;
+    expect(await w.events(replacementId)).toMatchObject([{ fromStatus: null, toStatus: "broadcast", actor: w.ceo.userId, note: `replacement for role ${first.id}` }]);
+    expect(w.subjects(w.ceo)).toContain(`Replacement search started: ${title}`);
+    // The broadcast job ran after commit: candidates are scored and nudged again, and can apply.
+    expect(await w.stages(replacementId, a, b, c)).toEqual(["scored", "scored", "scored"]);
+    expect(w.subjects(b).filter((s) => s === `A role that fits you: ${title}`)).toHaveLength(2);
+    expect((await b.req(`/me/roles/${replacementId}/apply`, post())).status).toBe(201);
+
+    // The original: the departure is final, and the role holds until its guarantee ends.
+    expect((await w.act(matchId, { stage: "left_early" })).status).toBe(409);
+    expect((await w.act(matchId, { stage: "did_not_join" })).status).toBe(409);
+    expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 0 });
+
+    w.t.clock.set("2027-02-05T00:00:01Z"); // 90 days from 6 November ended with 4 February
+    await w.relogin(w.staff, w.ceo);
+    const late = await w.act(second.match[c.email]!, { stage: "left_early" });
+    expect(late.status).toBe(409);
+    expect((await body(late)).message).toMatch(/guarantee has ended/);
+    expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 2 });
+    expect((await w.row(first.id)).status).toBe("closed");
+    expect(await w.stages(first.id, a)).toEqual(["left_early"]);
+    expect((await w.row(second.id)).status).toBe("closed");
+    expect((await w.row(replacementId)).status).toBe("broadcast"); // untouched by the original's closing
+  });
+});

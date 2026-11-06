@@ -136,7 +136,11 @@ roleRoutes.post("/matches/:id/actions", async (c) => {
   const out = await companyAction(deps, { matchId: uuidParam(c.req.param("id"), "match"), user: c.var.user!, stage, data });
   const [candidate] = await deps.identity.listCandidatesByIds([out.match.candidateId]);
   const campuses = await publicCampuses(deps);
-  return c.json({ match: shortlistRowView(out.match, candidate, campuses.get(candidate?.campusId ?? "")), role: await view(deps, out.role) });
+  return c.json({
+    match: shortlistRowView(out.match, candidate, campuses.get(candidate?.campusId ?? "")), role: await view(deps, out.role),
+    // Only a `left_early` action creates one (§9.2).
+    ...(out.replacement ? { replacement: await view(deps, out.replacement) } : {}),
+  });
 });
 
 /** §9.2: the company stands by a hire the candidate disputes; staff then settle it. To agree instead, mark the hire `did_not_join`. */

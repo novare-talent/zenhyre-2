@@ -349,8 +349,8 @@ describe("after the freeze", () => {
     const reneged = await t.as(b.cookie)(`/me/applications/${apps[1]}/withdraw`, post());
     expect((await body(reneged)).application).toMatchObject({ stage: "offer_reneged", canWithdraw: false });
     expect((await ceo(`/matches/${apps[1]}/actions`, post({ stage: "hired", hiredCtc: L(14), joinedOn: "2026-12-01" }))).status).toBe(409);
-    // "Left early" needs the replacement-role workflow, which is not in this slice.
-    expect((await body(await ceo(`/matches/${apps[1]}/actions`, post({ stage: "left_early" })))).error).toBe("not_supported");
+    // "Left early" is for a hire, not for a candidate who never started.
+    expect((await body(await ceo(`/matches/${apps[1]}/actions`, post({ stage: "left_early" })))).error).toBe("illegal_transition");
   });
 });
 
