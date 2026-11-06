@@ -36,6 +36,10 @@ export async function answerJoin(deps: AppDeps, input: { matchId: string; userId
     if (match.joinConfirmedAt) throw notOpen("Your joining is already confirmed.");
     if (await openJoinDispute(w, match.id)) throw notOpen("You have already answered; the company has been asked to respond.");
     if (input.joined) return w.m.matching.confirmJoin(match.id, "candidate", { kind: "candidate", userId: input.userId });
+    // The grace period is a deadline, not just the hour the nightly job happens to run: a late "no" cannot reopen it.
+    if (deps.clock.now().getTime() >= match.joinPromptSentAt.getTime() + (await w.m.ops.config.get("fee.join_grace_days")) * DAY_MS) {
+      throw notOpen("The time to answer has passed, so your joining is taken as confirmed.");
+    }
     await w.m.ops.openReview({ kind: "join_dispute", refType: "match", refId: match.id, associationId: null,
       payload: { roleId: role.id, roleTitle: role.title, companyId: role.companyId, candidateId: match.candidateId,
         disputedAt: deps.clock.now().toISOString(), companyConfirmedAt: null } });
@@ -56,6 +60,11 @@ export async function companyConfirmJoin(deps: AppDeps, input: { matchId: string
     await w.m.identity.requireActiveMember(input.user.id, role.companyId);
     const dispute = await openJoinDispute(w, seen.id);
     if (!dispute) throw notOpen("There is no open joining dispute on this hire.");
+    // Likewise the company's window: once it has run out, silence has already decided (§9.2) and `role.join_grace` reverses the hire.
+    const disputedAt = (dispute.payload as { disputedAt?: string }).disputedAt;
+    if (disputedAt && deps.clock.now().getTime() >= new Date(disputedAt).getTime() + (await w.m.ops.config.get("fee.join_dispute_days")) * DAY_MS) {
+      throw notOpen("The time to contest this has passed.");
+    }
     await w.m.ops.amendReview(dispute.id, { companyConfirmedAt: deps.clock.now().toISOString(), companyConfirmedBy: input.user.id });
     return { ok: true as const };
   });

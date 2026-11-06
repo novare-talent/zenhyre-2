@@ -21,13 +21,14 @@ export interface JobQueue { enqueue(name: RoleJobName, payload: { roleId: string
 
 /**
  * §13: a job's final failure writes `Role.job_error` and opens an `alert` ReviewItem. Written in its own transaction,
- * after the failed workflow has rolled back. A later success clears the error.
+ * after the failed workflow has rolled back. A later success of the same job clears the error.
  */
 export async function runRoleJob(deps: AppDeps, name: string, roleId: string, run: () => Promise<unknown>): Promise<boolean> {
   try {
     await run();
     const role = await deps.roles.get(roleId);
-    if (role?.jobError) await deps.roles.update(roleId, { jobError: null });
+    // Only this job's own error: a role can be swept by several jobs a night, and one succeeding says nothing about another.
+    if (role?.jobError?.startsWith(`${name}: `)) await deps.roles.update(roleId, { jobError: null });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

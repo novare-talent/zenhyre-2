@@ -1,4 +1,4 @@
-import { Invalid, NotFound } from "@zenhyre/shared";
+import { DomainError, Invalid, NotFound } from "@zenhyre/shared";
 import { AppDeps } from "../context";
 import { inTx, requireStaff, User } from "./tx";
 
@@ -13,6 +13,9 @@ export async function mergeCompanies(deps: AppDeps, input: { survivorId: string;
     const survivor = await w.m.identity.getCompany(input.survivorId);
     const absorbed = await w.m.identity.getCompany(input.absorbedId);
     if (!survivor || !absorbed) throw new NotFound("company");
+    // A merge re-seats the absorbed company's users as unlocked members of the survivor, so it must not become a way
+    // around a ban on either side.
+    if (survivor.status === "banned" || absorbed.status === "banned") throw new DomainError("not_mergeable", "A banned company cannot be merged; lift the ban first.", 409);
     const rolesMoved = await w.m.roles.reassignCompany(absorbed.id, survivor.id);
     await w.m.identity.mergeCompanies({ survivorId: survivor.id, absorbedId: absorbed.id });
     const note = [`absorbed ${absorbed.name} (${absorbed.id}); ${rolesMoved} roles moved`, input.note?.trim()].filter(Boolean).join(". ");

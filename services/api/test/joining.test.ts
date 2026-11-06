@@ -61,6 +61,11 @@ describe("confirmJoin (§9.2)", () => {
     w.t.clock.advance(7 * DAY - MINUTE);
     expect(await w.runJob("role.join_grace")).toMatchObject({ job: "role.join_grace", roles: 0 });
     w.t.clock.advance(MINUTE);
+    // The seven days are a deadline in their own right: a "no" that beats the nightly job is still too late.
+    const late = await answer(b, matchId, false);
+    expect(late.status).toBe(409);
+    expect((await body(late)).message).toMatch(/time to answer has passed/);
+    expect(await disputes(matchId)).toEqual([]);
     expect(await w.runJob("role.join_grace")).toMatchObject({ roles: 1 });
     expect(await match(matchId)).toMatchObject({ stage: "hired", joinConfirmedAt: w.t.clock.now(), joinConfirmedBy: "grace" });
     expect((await answer(b, matchId, false)).status).toBe(409); // too late to dispute
@@ -82,6 +87,10 @@ describe("confirmJoin (§9.2)", () => {
     w.t.clock.advance(3 * DAY - MINUTE);
     expect(await w.runJob("role.join_grace")).toMatchObject({ roles: 0 });
     w.t.clock.advance(MINUTE);
+    // Three days of silence have decided it; contesting now, ahead of the nightly job, is too late.
+    const late = await w.ceo.req(`/matches/${matchId}/confirm-join`, post());
+    expect(late.status).toBe(409);
+    expect((await body(late)).message).toMatch(/time to contest/);
     expect(await w.runJob("role.join_grace")).toMatchObject({ roles: 1 });
     expect((await match(matchId)).stage).toBe("did_not_join");
     expect(await w.row(roleId)).toMatchObject({ status: "shortlist_ready", hiredMatchId: null, shortlistReadyAt: w.t.clock.now() });

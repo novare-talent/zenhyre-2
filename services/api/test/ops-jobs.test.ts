@@ -24,6 +24,15 @@ describe("mergeCompanies (§6.4)", () => {
     expect((await w.staff.req(`/admin/companies/00000000-0000-4000-8000-000000000000/merge`, post({ into: w.companyId }))).status).toBe(404);
     expect((await w.rival.req(`/roles/${mine}`)).status).toBe(403); // two companies, for now
 
+    // A merge unlocks the absorbed company's users, so a banned company is not mergeable from either side.
+    for (const banned of [w.rivalCompanyId, w.companyId]) {
+      await w.t.db.update(schema.company).set({ status: "banned" }).where(eq(schema.company.id, banned));
+      const refused = await w.staff.req(`/admin/companies/${w.rivalCompanyId}/merge`, post({ into: w.companyId }));
+      expect(refused.status).toBe(409);
+      expect(await body(refused)).toMatchObject({ error: "not_mergeable" });
+      await w.t.db.update(schema.company).set({ status: "active" }).where(eq(schema.company.id, banned));
+    }
+
     const res = await w.staff.req(`/admin/companies/${w.rivalCompanyId}/merge`, post({ into: w.companyId, note: "Same startup, two sign-ups." }));
     expect(res.status).toBe(200);
     expect(await body(res)).toMatchObject({ company: { id: w.companyId, name: "Lab0" }, rolesMoved: 1 });
