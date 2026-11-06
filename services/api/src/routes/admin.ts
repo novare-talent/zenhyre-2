@@ -6,6 +6,7 @@ import { resolveVerification, VerificationResolution } from "../workflows/resolv
 import { gateDecision } from "../workflows/gateDecision";
 import { resolveCampusIds } from "./views";
 import { ConfigKey, CONFIG } from "@zenhyre/ops";
+import { assertFreeFor } from "../oneRole";
 
 export const adminRoutes = new Hono<{ Variables: Vars }>();
 adminRoutes.use("/admin/*", requireUser, requireStaff);
@@ -58,10 +59,14 @@ adminRoutes.post("/admin/associations", async (c) => {
   const campus = await identity.campusByShortCode(body.campusShortCode);
   if (!campus) return c.json({ error: "unknown campus" }, 404);
   if (await identity.associationForCampus(campus.id)) return c.json({ error: "campus already has an association" }, 409);
+  for (const email of body.adminEmails) { // check every address before creating anything
+    const existing = await identity.userIdForEmail(email);
+    if (existing) await assertFreeFor(identity, existing, "association");
+  }
   const assoc = await identity.createAssociation({ campusId: campus.id, name: body.name, shareRate: body.shareRate, payoutMode: body.payoutMode });
   for (const email of body.adminEmails) {
-    const { token } = await identity.inviteAssociationAdmin({ associationId: assoc.id, invitedBy: c.var.user!.id, email });
-    await notify.sendToEmail(email, "association_admin_invite", { associationName: assoc.name, url: `${baseUrl}/auth/redeem?t=${token}` });
+    await identity.grantAssociationAdmin({ associationId: assoc.id, invitedBy: c.var.user!.id, email });
+    await notify.sendToEmail(email, "association_admin_invite", { associationName: assoc.name, url: `${baseUrl}/login?as=association` });
   }
   await c.var.deps.ops.audit(c.var.user!.id, "association.create", "association", assoc.id);
   return c.json({ association: assoc }, 201);

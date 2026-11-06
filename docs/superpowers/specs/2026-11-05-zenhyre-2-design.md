@@ -559,7 +559,7 @@ All money values in paise; all durations in days unless named otherwise.
 | `trust.overdue_days` | 30 |
 | `trust.self_report_days` | `[30, 90]` |
 | `trust.leakage_lookback_months` | 12 |
-| `identity.freemail_domains` | `["gmail.com","yahoo.com","outlook.com","hotmail.com","icloud.com","proton.me","rediffmail.com"]` |
+| `identity.freemail_domains` | Personal mailbox providers: Gmail, Yahoo, Outlook/Hotmail/Live/MSN, iCloud, Proton, Rediffmail, AOL, Zoho, GMX, Mail.com, Yandex and their country variants (full list in `packages/ops/src/defaults.ts`). Candidates may use these or a campus address; companies may use neither. |
 | `identity.escape_hatch_days` | 7 |
 | `identity.max_verification_attempts` | 2 |
 | `identity.final_year_months_before_grad` | 12 |

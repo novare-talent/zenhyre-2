@@ -23,6 +23,21 @@ export function createAssociationModule(db: DbOrTx, clock: Clock) {
         .values({ userId, associationId: payload.associationId, invitedBy: payload.invitedBy }).onConflictDoNothing().returning();
       return row ?? { userId, associationId: payload.associationId, invitedBy: payload.invitedBy, joinedAt: clock.now() };
     },
+    /**
+     * §6.5, as run in practice: Novare staff create the association's login themselves. The address becomes an
+     * admin at once; the person proves they own it the first time they sign in with a magic link.
+     */
+    async grantAssociationAdmin(input: { associationId: string; email: string; invitedBy: string | null }) {
+      const email = input.email.toLowerCase();
+      let userId = await auth.userIdForEmail(email);
+      if (!userId) {
+        const [u] = await db.insert(schema.user).values({}).returning();
+        await db.insert(schema.userEmail).values({ userId: u!.id, email, isPrimary: true });
+        userId = u!.id;
+      }
+      await db.insert(schema.associationAdmin).values({ userId, associationId: input.associationId, invitedBy: input.invitedBy }).onConflictDoNothing();
+      return { userId };
+    },
     async associationsForUser(userId: string) {
       const rows = await db.select({ a: schema.association }).from(schema.associationAdmin)
         .innerJoin(schema.association, eq(schema.association.id, schema.associationAdmin.associationId))

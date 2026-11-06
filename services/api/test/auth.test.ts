@@ -13,6 +13,15 @@ describe("auth", () => {
     expect(me.status).toBe(200);
     expect((await me.json() as any).user.id).toBe(json.userId);
   });
+  it("/me returns the signed-in email and never the campus tier", async () => {
+    const { cookie } = await t.signIn("who@startup.io");
+    const me = await (await t.as(cookie)("/me")).json() as any;
+    expect(me.emails).toEqual([{ email: "who@startup.io", isPrimary: true, verified: true }]);
+    expect(me.candidate).toBeNull();
+    expect(me.campus).toBeNull();
+    expect(me.company).toBeNull();
+    expect(JSON.stringify(me)).not.toContain("internalTier");
+  });
   it("rejects /me without a session", async () => {
     expect((await t.app.request("/me")).status).toBe(401);
   });

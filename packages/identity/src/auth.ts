@@ -4,6 +4,8 @@ import { DbOrTx, schema } from "@zenhyre/db";
 import { Clock, Invalid } from "@zenhyre/shared";
 
 const LINK_TTL_MS = 15 * 60 * 1000;
+/** Invites are issued by one person and opened by another, often days later. A sign-in link is asked for and used at once. */
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export type LinkPurpose = "signin" | "company_invite" | "association_admin_invite";
 
@@ -16,7 +18,7 @@ export function createAuth(db: DbOrTx, clock: Clock) {
     async issueMagicLink(email: string, purpose: LinkPurpose, payload: Record<string, unknown>) {
       const token = randomBytes(32).toString("base64url");
       await db.insert(schema.magicLinkToken).values({
-        token, email: email.toLowerCase(), purpose, payload, expiresAt: new Date(clock.now().getTime() + LINK_TTL_MS) });
+        token, email: email.toLowerCase(), purpose, payload, expiresAt: new Date(clock.now().getTime() + (purpose === "signin" ? LINK_TTL_MS : INVITE_TTL_MS)) });
       return { token };
     },
     /** Marks the token used, upserts the user+email, opens a session. Returns payload for invite purposes. */

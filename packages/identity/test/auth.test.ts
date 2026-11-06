@@ -18,6 +18,15 @@ describe("magic links", () => {
     expect(r.created).toBe(true);
     await expect(id.redeemMagicLink(token)).rejects.toThrow(/used|expired/i);
   });
+  it("keeps an invite link open for 7 days, unlike a 15-minute sign-in link", async () => {
+    const id = createIdentity(db, { clock: fixedClock("2026-11-05T10:00:00Z") });
+    const { token } = await id.issueMagicLink("invited@alumni.org", "association_admin_invite", {});
+    const { token: stale } = await id.issueMagicLink("invited2@alumni.org", "association_admin_invite", {});
+    const sixDays = createIdentity(db, { clock: fixedClock("2026-11-11T09:00:00Z") });
+    expect((await sixDays.redeemMagicLink(token)).purpose).toBe("association_admin_invite");
+    const eightDays = createIdentity(db, { clock: fixedClock("2026-11-13T11:00:00Z") });
+    await expect(eightDays.redeemMagicLink(stale)).rejects.toThrow(/expired/i);
+  });
   it("rejects an expired token", async () => {
     const id = createIdentity(db, { clock: fixedClock("2026-11-05T10:00:00Z") });
     const { token } = await id.issueMagicLink("late@gmail.com", "signin", {});

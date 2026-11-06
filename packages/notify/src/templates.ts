@@ -7,8 +7,9 @@ const inApp: Channel[] = ["in_app"];
 // Every entry uses one of the three typed arrays above; an inline literal would narrow to "email"[] and break `.includes` under strict.
 export const TEMPLATES = {
   magic_link: { channels: email, subject: () => "Sign in to Zenhyre", text: (d) => `Click to sign in (valid 15 minutes): ${d.url}` },
-  company_invite: { channels: email, subject: (d) => `Join ${d.companyName} on Zenhyre`, text: (d) => `${d.inviterName} invited you. Accept: ${d.url}` },
-  association_admin_invite: { channels: email, subject: (d) => `Admin access for ${d.associationName} on Zenhyre`, text: (d) => `Accept: ${d.url}` },
+  company_invite: { channels: email, subject: (d) => `Join ${d.companyName} on Zenhyre`, text: (d) => `${d.inviterName} invited you. Open this link within 7 days to accept: ${d.url}` },
+  association_admin_invite: { channels: email, subject: (d) => `Your ${d.associationName} login on Zenhyre`,
+    text: (d) => `Novare Talent has created your login for ${d.associationName} on Zenhyre. Log in at ${d.url} with this email address. There is no password: we email you a sign-in link each time.` },
   add_personal_email: { channels: both, subject: () => "Add a personal email before you graduate", text: () => "Your campus email will stop working. Add a personal email to keep your Zenhyre account." },
   verification_approved: { channels: both, subject: () => "You're verified on Zenhyre", text: () => "Your alumni status is confirmed. You can now apply to roles." },
   verification_rejected: { channels: both, subject: () => "We couldn't verify your alumni status", text: (d) => `Reason: ${d.reason}. You may request verification once more.` },

@@ -5,6 +5,7 @@ import { requireUser } from "../middleware/auth";
 import { signUpCandidate } from "../workflows/signUpCandidate";
 import { retryVerification } from "../workflows/retryVerification";
 import { saveProfile } from "../workflows/saveProfile";
+import { assertCandidateEmail, assertFreeFor, emailKind } from "../oneRole";
 
 export const candidateRoutes = new Hono<{ Variables: Vars }>();
 // Prefix-scoped guards: these do not leak onto other route groups mounted on the same parent.
@@ -23,6 +24,8 @@ candidateRoutes.post("/candidates", async (c) => {
   const me = await c.var.deps.identity.getCandidate(c.var.user!.id);
   if (me) return c.json({ error: "already a candidate" }, 409);
   const emailRow = (await c.var.deps.identity.emailsFor(c.var.user!.id)).find((e) => e.isPrimary)!;
+  await assertFreeFor(c.var.deps.identity, c.var.user!.id, "candidate");
+  assertCandidateEmail(await emailKind(c.var.deps.identity, await c.var.deps.ops.config.get("identity.freemail_domains"), emailRow.email));
   const candidate = await signUpCandidate(c.var.deps, { userId: c.var.user!.id, email: emailRow.email, gradDate: body.gradDate, course: body.course,
     rollNumber: body.rollNumber ?? null, campusShortCode: body.campusShortCode, claimed: body.claimed });
   return c.json({ candidate }, 201);
