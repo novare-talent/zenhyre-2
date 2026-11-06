@@ -59,4 +59,6 @@ export function requireStaff(user: User): Actor {
 export const roleContext = (role: Role): RoleContext => ({
   id: role.id, status: role.status, hiredMatchId: role.hiredMatchId, replacementGuaranteeDays: role.feeTerms?.replacement_guarantee_days });
 
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
 export const roleUrl = (deps: AppDeps, roleId: string) => `${deps.baseUrl}/company/roles/${roleId}`;

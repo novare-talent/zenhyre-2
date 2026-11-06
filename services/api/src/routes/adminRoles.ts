@@ -51,7 +51,7 @@ adminRoleRoutes.post("/admin/roles/:id/close-broadcast", async (c) => {
   return c.json(out, out.frozen ? 200 : 409);
 });
 
-/** Runs a scheduled job once (`role.close_broadcast`, `role.terms_auto_release`), or re-runs a role job (`role.gate`, `role.broadcast`) for one role. */
+/** Runs a scheduled job once (any name in `SCHEDULED_JOBS`), or re-runs a role job (`role.gate`, `role.broadcast`) for one role. */
 adminRoleRoutes.post("/admin/jobs/:name/run", async (c) => {
   const name = c.req.param("name");
   const { deps } = c.var;

@@ -8,6 +8,7 @@ import { requireUser } from "../middleware/auth";
 import { submitRole } from "../workflows/submitRole";
 import { appealRole } from "../workflows/appealRole";
 import { acceptTerms } from "../workflows/acceptTerms";
+import { withdrawRole } from "../workflows/withdrawRole";
 import { companyAction, COMPANY_STAGES } from "../workflows/companyAction";
 import { companyRoleView, publicCampuses, resolveCampusIds, shortlistRowView, uuidParam } from "./views";
 
@@ -95,6 +96,13 @@ roleRoutes.post("/roles/:id/appeal", async (c) => {
 
 roleRoutes.post("/roles/:id/terms/accept", async (c) => {
   const role = await acceptTerms(c.var.deps, { roleId: uuidParam(c.req.param("id"), "role"), user: c.var.user! });
+  return c.json({ role: await view(c.var.deps, role) });
+});
+
+/** §5: a company (or staff) withdraws a role from any open state. `closing` and terminal roles refuse with a 409. */
+roleRoutes.post("/roles/:id/withdraw", async (c) => {
+  const body = z.object({ note: z.string().max(2000).optional() }).parse(await c.req.json().catch(() => ({})));
+  const role = await withdrawRole(c.var.deps, { roleId: uuidParam(c.req.param("id"), "role"), user: c.var.user!, note: body.note });
   return c.json({ role: await view(c.var.deps, role) });
 });
 

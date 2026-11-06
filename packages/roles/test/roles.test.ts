@@ -346,3 +346,46 @@ describe("merge", () => {
     await db.delete(schema.company).where(eq(schema.company.id, other!.id)); // no FK left behind
   });
 });
+
+describe("what the closing jobs sweep for (§18)", () => {
+  const ids = (rs: Role[]) => rs.map((r) => r.id);
+  it("terms timeout: released terms left unaccepted, counted from release", async () => {
+    const unreleased = await roleAt("terms_pending");
+    const released = await roleAt("terms_pending");
+    await roles.releaseTerms(released.id);
+    const accepted = await roleAt("deposit_pending");
+    clock.advance(14 * DAY - 60_000);
+    expect(ids(await roles.listTermsTimedOut(14))).not.toContain(released.id);
+    clock.advance(60_000);
+    const due = ids(await roles.listTermsTimedOut(14));
+    expect(due).toContain(released.id);
+    expect(due).not.toContain(unreleased.id); // never shown to the company, so its clock has not started
+    expect(due).not.toContain(accepted.id);
+  });
+  it("dark check: shortlists with no hire, counted from the last time they were made ready", async () => {
+    const dark = await roleAt("shortlist_ready");
+    const reopened = await roleAt("closing");
+    clock.advance(20 * DAY);
+    await roles.reopen(reopened.id, company);
+    const hired = await roleAt("closing");
+    clock.advance(10 * DAY - 60_000);
+    expect(ids(await roles.listShortlistsDark(30))).not.toContain(dark.id);
+    clock.advance(60_000);
+    const due = ids(await roles.listShortlistsDark(30));
+    expect(due).toContain(dark.id);
+    expect(due).not.toContain(reopened.id); // the reopen restarted its clock
+    expect(due).not.toContain(hired.id);
+    clock.advance(20 * DAY);
+    expect(ids(await roles.listShortlistsDark(30))).toContain(reopened.id);
+  });
+  it("guarantee expiry: roles holding in closing on a hire, not abandoned or closed ones", async () => {
+    const hired = await roleAt("closing");
+    const abandoned = await roleAt("shortlist_ready");
+    await roles.transition(abandoned.id, "closing", SYSTEM, "no hire in 30 days");
+    const closed = await roleAt("closed");
+    const found = ids(await roles.listClosingWithHire());
+    expect(found).toContain(hired.id);
+    expect(found).not.toContain(abandoned.id);
+    expect(found).not.toContain(closed.id);
+  });
+});

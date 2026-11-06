@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import type { FeeTerms } from "@zenhyre/db/schema";
 import { Clock, IllegalTransition, Invalid, NotFound } from "@zenhyre/shared";
@@ -201,6 +201,20 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
         .innerJoin(schema.roleEvent, and(eq(schema.roleEvent.roleId, schema.role.id), eq(schema.roleEvent.toStatus, "terms_pending")))
         .where(and(eq(schema.role.status, "terms_pending"), isNull(schema.role.feeTermsReleasedAt), lte(schema.roleEvent.at, cutoff)));
       return [...new Map(rows.map((x) => [x.role.id, x.role])).values()];
+    },
+    /** For `role.terms_timeout`: terms released at least `days` ago that the company has not accepted. */
+    async listTermsTimedOut(days: number): Promise<Role[]> {
+      const cutoff = new Date(clock.now().getTime() - days * DAY_MS);
+      return db.select().from(schema.role).where(and(eq(schema.role.status, "terms_pending"), lte(schema.role.feeTermsReleasedAt, cutoff)));
+    },
+    /** For `role.dark_check`: shortlists with no hire `days` after they were last made ready (a reopen restarts the clock). */
+    async listShortlistsDark(days: number): Promise<Role[]> {
+      const cutoff = new Date(clock.now().getTime() - days * DAY_MS);
+      return db.select().from(schema.role).where(and(eq(schema.role.status, "shortlist_ready"), isNull(schema.role.hiredMatchId), lte(schema.role.shortlistReadyAt, cutoff)));
+    },
+    /** For `role.guarantee_expiry`: roles holding in `closing` on a recorded hire. Whether the guarantee has run out is the hired match's to say. */
+    async listClosingWithHire(): Promise<Role[]> {
+      return db.select().from(schema.role).where(and(eq(schema.role.status, "closing"), isNotNull(schema.role.hiredMatchId)));
     },
 
     /** draft → gated. The gate job, not this call, decides whether the content is good enough. */

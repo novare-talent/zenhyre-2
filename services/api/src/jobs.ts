@@ -3,6 +3,9 @@ import { gateDecision } from "./workflows/gateDecision";
 import { broadcastRole } from "./workflows/broadcastRole";
 import { freezeShortlist } from "./workflows/freezeShortlist";
 import { releaseTerms } from "./workflows/releaseTerms";
+import { termsTimeout } from "./workflows/withdrawRole";
+import { darkCheck } from "./workflows/darkCheck";
+import { guaranteeExpiry } from "./workflows/guaranteeExpiry";
 
 /** Jobs a workflow enqueues after it commits (§3.3). Each takes the role it is about. */
 export const ROLE_JOBS = {
@@ -46,6 +49,19 @@ export function inlineJobs(deps: AppDeps): JobQueue {
   return { enqueue: async (name, payload) => { await runRoleJob(deps, name, payload.roleId, () => ROLE_JOBS[name](deps, payload)); } };
 }
 
+/**
+ * Runs `step` for each role under `runRoleJob` and counts the roles it acted on. The lists these sweeps start from are
+ * read outside any lock, so each step re-checks under the role's lock and reports whether it did anything.
+ */
+async function sweep(deps: AppDeps, name: string, roles: Array<{ id: string }>, step: (roleId: string) => Promise<boolean>) {
+  let done = 0;
+  for (const { id } of roles) {
+    let acted = false;
+    if (await runRoleJob(deps, name, id, async () => { acted = await step(id); }) && acted) done++;
+  }
+  return { roles: done };
+}
+
 /** §18 scheduled jobs this slice provides. Each is safe to run at any time and as often as wanted. */
 export const SCHEDULED_JOBS = {
   /** Hourly: freeze the shortlist of every broadcast whose window has ended. */
@@ -64,5 +80,16 @@ export const SCHEDULED_JOBS = {
     }
     return { roles: done };
   },
+  /** Nightly: withdraw roles whose released terms went unaccepted for `gate.terms_timeout_days`. */
+  "role.terms_timeout": async (deps: AppDeps) =>
+    sweep(deps, "role.terms_timeout", await deps.roles.listTermsTimedOut(await deps.ops.config.get("gate.terms_timeout_days")),
+      async (roleId) => (await termsTimeout(deps, { roleId })).withdrawn),
+  /** Nightly: close shortlists with no hire `deposit.dark_days` after they were made ready. */
+  "role.dark_check": async (deps: AppDeps) =>
+    sweep(deps, "role.dark_check", await deps.roles.listShortlistsDark(await deps.ops.config.get("deposit.dark_days")),
+      async (roleId) => (await darkCheck(deps, { roleId })).abandoned),
+  /** Nightly: close hired roles whose replacement guarantee has ended. */
+  "role.guarantee_expiry": async (deps: AppDeps) =>
+    sweep(deps, "role.guarantee_expiry", await deps.roles.listClosingWithHire(), async (roleId) => (await guaranteeExpiry(deps, { roleId })).closed),
 } as const;
 export type ScheduledJobName = keyof typeof SCHEDULED_JOBS;

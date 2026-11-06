@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, notInArray, sql } from "drizzle
 import { DbOrTx, schema } from "@zenhyre/db";
 import { Clock, DomainError, Forbidden, IllegalTransition, Invalid, NotFound } from "@zenhyre/shared";
 import { MatchActor, MatchStage, QUALIFYING_STAGES, REJECTION_CATEGORIES, RejectionCategory, SETTLED_STAGES, SYSTEM_ACTOR,
-  canMove, matchActorRef } from "./stages";
+  canMove, guaranteeEndsAt, matchActorRef } from "./stages";
 import { MatchingCandidate, MatchingRole, canApply, isMatchable } from "./filter";
 import { Fit, Scorer } from "./scorer";
 
@@ -33,7 +33,6 @@ export interface StageData {
 export interface RerankResult { promoted: Match[]; displaced: Match[]; shortlisted: number }
 export interface ApplyResult extends RerankResult { match: Match; pendingApproval: boolean }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const isCtc = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n > 0;
 const isDate = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(s + "T00:00:00Z").getTime())
   && new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s;
@@ -125,7 +124,7 @@ export function createMatchingModule(db: DbOrTx, clock: Clock, scorer: Scorer, c
       if (!m.joinConfirmedAt) throw closed("Joining has not been confirmed yet; use did not join instead.");
       const days = role?.replacementGuaranteeDays;
       if (days === undefined || !m.joinedOn) throw new Invalid("left early needs the role's replacement guarantee");
-      if (now.getTime() > new Date(m.joinedOn + "T00:00:00Z").getTime() + (days + 1) * DAY_MS) throw closed(`The ${days}-day replacement guarantee has ended.`);
+      if (now.getTime() > guaranteeEndsAt(m.joinedOn, days).getTime()) throw closed(`The ${days}-day replacement guarantee has ended.`);
     }
     return move(m, to, actor, set, eventData);
   }
