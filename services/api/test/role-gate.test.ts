@@ -73,9 +73,9 @@ describe("stage 2: model, on fixture responses", () => {
   it("accepts at or above the accept threshold and prefills terms by role type", async () => {
     const fresher = await submit();
     expect(fresher).toMatchObject({ status: "terms_pending", gate: { stage: "model", outcome: "accept" } });
-    expect((await row(fresher.id)).feeTerms).toEqual({ kind: "percent", amount: 0.1, replacement_guarantee_days: 90 });
+    expect((await row(fresher.id)).feeTerms).toEqual({ kind: "percent", amount: 0.1, replacement_guarantee_days: 60 });
     const intern = await submit({ type: "intern", ctcMin: 12 * 6_000_000, ctcMax: 12 * 8_000_000, yearsExpMax: 0 });
-    expect((await row(intern.id)).feeTerms).toEqual({ kind: "flat", amount: 1_250_000, replacement_guarantee_days: 90 });
+    expect((await row(intern.id)).feeTerms).toEqual({ kind: "flat", amount: 1_250_000, replacement_guarantee_days: 60 });
     const senior = await submit({ type: "experienced", ctcMin: L(60), ctcMax: L(80), yearsExpMin: 10, yearsExpMax: 15 });
     expect((await row(senior.id)).feeTerms).toMatchObject({ kind: "percent", amount: 0.2 });
   });

@@ -104,8 +104,8 @@ describe("Slice 1 hiring loop", () => {
     expect((await ceo.req(`/admin/roles/${roleId}/release-terms`, post())).status).toBe(403);
     expect((await staff.req(`/admin/roles/${roleId}/release-terms`, post())).status).toBe(200);
     expect(emailsTo(ceo)).toContain("Fee terms ready: Backend engineer, payments");
-    // Fresher role: 10% of annual CTC, 90-day replacement guarantee (§7, §17).
-    expect((await role()).feeTerms).toEqual({ kind: "percent", amount: 0.1, replacement_guarantee_days: 90 });
+    // Fresher role: 10% of annual CTC, 60-day replacement guarantee (§7, §17).
+    expect((await role()).feeTerms).toEqual({ kind: "percent", amount: 0.1, replacement_guarantee_days: 60 });
 
     expect((await rival.req(`/roles/${roleId}/terms/accept`, post())).status).toBe(403);
     const accepted = await ceo.req(`/roles/${roleId}/terms/accept`, post());

@@ -199,10 +199,10 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
     const unasked = await w.shortlisted("Engineer, never asked", [d]);
     unaskedId = unasked.id;
     await w.hire(unasked.match[d.email]!, "2026-11-12");
-    expect(await w.row(roleId)).toMatchObject({ status: "closing", depositMode: "waived", hiredMatchId: match[a.email], feeTerms: { replacement_guarantee_days: 90 } });
+    expect(await w.row(roleId)).toMatchObject({ status: "closing", depositMode: "waived", hiredMatchId: match[a.email], feeTerms: { replacement_guarantee_days: 60 } });
 
-    // 90 days from 10 November: 8 February is the last day of the guarantee.
-    w.t.clock.set("2027-02-08T23:59:00Z");
+    // 60 days from 10 November: 9 January is the last day of the guarantee.
+    w.t.clock.set("2027-01-09T23:59:00Z");
     await w.relogin(w.staff, w.ceo);
     expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ job: "role.guarantee_expiry", roles: 0 });
     expect((await w.row(roleId)).status).toBe("closing");
@@ -211,13 +211,13 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
   });
 
   it("once the guarantee has ended the role closes: open matches end at role_closed, the hire and the rejection stand", async () => {
-    w.t.clock.set("2027-02-09T00:00:01Z");
+    w.t.clock.set("2027-01-10T00:00:01Z");
     expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 1 });
 
     expect(await w.row(roleId)).toMatchObject({ status: "closed", hiredMatchId: match[a.email], depositMode: "waived", jobError: null });
     const trail = await w.events(roleId);
     expect(trail.map((e) => e.toStatus)).toEqual(["draft", "gated", "terms_pending", "deposit_pending", "broadcast", "shortlist_ready", "closing", "closed"]);
-    expect(trail.at(-1)).toMatchObject({ fromStatus: "closing", toStatus: "closed", actor: "system", note: "90-day replacement guarantee ended" });
+    expect(trail.at(-1)).toMatchObject({ fromStatus: "closing", toStatus: "closed", actor: "system", note: "60-day replacement guarantee ended" });
 
     expect(await w.stages(roleId, a, b, c, d)).toEqual(["hired", "rejected", "role_closed", "role_closed"]);
     expect((await w.matches(roleId)).get(a.userId)).toMatchObject({ stage: "hired", joinedOn: "2026-11-10", joinConfirmedBy: "grace" });
@@ -250,7 +250,7 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
   });
 
   it("holds a hire whose joining was never confirmed, however long ago its guarantee ended", async () => {
-    w.t.clock.set("2027-02-19T00:00:01Z"); // the guarantees of both remaining hires have ended
+    w.t.clock.set("2027-01-20T00:00:01Z"); // the guarantees of both remaining hires have ended
     expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 1 });
     expect((await w.row(laterId)).status).toBe("closed");
     expect((await w.row(unaskedId)).status).toBe("closing");

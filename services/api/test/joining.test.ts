@@ -175,7 +175,7 @@ describe("leftEarly (§9.2: the fee stands and a replacement role is broadcast)"
     expect(out.role).toMatchObject({ id: first.id, status: "closing", hiredMatchId: matchId });
     // §5: same content and reach, zero fee, waived deposit, straight into broadcast.
     expect(out.replacement).toMatchObject({ title, status: "broadcast", replacementOfRoleId: first.id, depositMode: "waived", depositAmount: 0,
-      feeTerms: { kind: "percent", amount: 0, replacement_guarantee_days: 90 }, campusReach: out.role.campusReach, jd: out.role.jd,
+      feeTerms: { kind: "percent", amount: 0, replacement_guarantee_days: 60 }, campusReach: out.role.campusReach, jd: out.role.jd,
       broadcastOpensAt: w.t.clock.now().toISOString(), broadcastClosesAt: new Date(w.t.clock.now().getTime() + 10 * DAY).toISOString() });
     const replacementId = out.replacement.id as string;
     expect(await w.events(replacementId)).toMatchObject([{ fromStatus: null, toStatus: "broadcast", actor: w.ceo.userId, note: `replacement for role ${first.id}` }]);
@@ -190,7 +190,7 @@ describe("leftEarly (§9.2: the fee stands and a replacement role is broadcast)"
     expect((await w.act(matchId, { stage: "did_not_join" })).status).toBe(409);
     expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 0 });
 
-    w.t.clock.set("2027-02-05T00:00:01Z"); // 90 days from 6 November ended with 4 February
+    w.t.clock.set("2027-01-06T00:00:01Z"); // 60 days from 6 November ended with 5 January
     await w.relogin(w.staff, w.ceo);
     const late = await w.act(second.match[c.email]!, { stage: "left_early" });
     expect(late.status).toBe(409);
