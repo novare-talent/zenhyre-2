@@ -170,7 +170,7 @@ Core entities (Postgres tables; snake_case in the schema).
 
 All CTC and money fields across the schema are **paise**; UI converts to ₹.
 
-`fee_terms` JSON: kind (`flat` | `percent`), amount (paise for flat, decimal for percent), replacement_guarantee_days (default 90), notes.
+`fee_terms` JSON: kind (`flat` | `percent`), amount (paise for flat, decimal for percent), replacement_guarantee_days (default 60; Novare's sales rep changes it per role when a company negotiates one), notes.
 
 **RoleEvent**: id, role_id, from_status, to_status, actor_user_id or `system`, note, at. Append-only.
 
@@ -537,7 +537,7 @@ All money values in paise; all durations in days unless named otherwise.
 | `fee.percent_default` | 0.10 |
 | `fee.percent_senior` | 0.20 |
 | `fee.senior_years` | 10 |
-| `fee.replacement_days` | 90 |
+| `fee.replacement_days` | 60 |
 | `fee.due_days_after_join` | 30 |
 | `fee.reminder_days_before_due` | 7 |
 | `fee.join_grace_days` | 7 |

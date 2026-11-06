@@ -64,3 +64,13 @@ export function withdrawTarget(stage: MatchStage): "withdrawn" | "offer_reneged"
   if (stage === "offer_accepted") return "offer_reneged";
   return canMove(stage, "withdrawn", "candidate") ? "withdrawn" : null;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * When a hire's replacement guarantee ends: the close of the last guarantee day, `joined_on + days`, in UTC. Up to this
+ * instant the company may still mark `left_early`; after it `guaranteeExpiry` may close the role. One definition, so the
+ * two can never overlap or leave a gap.
+ */
+export function guaranteeEndsAt(joinedOn: string, days: number): Date {
+  return new Date(new Date(joinedOn + "T00:00:00Z").getTime() + (days + 1) * DAY_MS);
+}

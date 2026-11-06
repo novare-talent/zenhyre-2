@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import type { FeeTerms } from "@zenhyre/db/schema";
 import { Clock, IllegalTransition, Invalid, NotFound } from "@zenhyre/shared";
@@ -202,6 +202,20 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
         .where(and(eq(schema.role.status, "terms_pending"), isNull(schema.role.feeTermsReleasedAt), lte(schema.roleEvent.at, cutoff)));
       return [...new Map(rows.map((x) => [x.role.id, x.role])).values()];
     },
+    /** For `role.terms_timeout`: terms released at least `days` ago that the company has not accepted. */
+    async listTermsTimedOut(days: number): Promise<Role[]> {
+      const cutoff = new Date(clock.now().getTime() - days * DAY_MS);
+      return db.select().from(schema.role).where(and(eq(schema.role.status, "terms_pending"), lte(schema.role.feeTermsReleasedAt, cutoff)));
+    },
+    /** For `role.dark_check`: shortlists with no hire `days` after they were last made ready (a reopen restarts the clock). */
+    async listShortlistsDark(days: number): Promise<Role[]> {
+      const cutoff = new Date(clock.now().getTime() - days * DAY_MS);
+      return db.select().from(schema.role).where(and(eq(schema.role.status, "shortlist_ready"), isNull(schema.role.hiredMatchId), lte(schema.role.shortlistReadyAt, cutoff)));
+    },
+    /** For `role.guarantee_expiry`: roles holding in `closing` on a recorded hire. Whether the guarantee has run out is the hired match's to say. */
+    async listClosingWithHire(): Promise<Role[]> {
+      return db.select().from(schema.role).where(and(eq(schema.role.status, "closing"), isNotNull(schema.role.hiredMatchId)));
+    },
 
     /** draft → gated. The gate job, not this call, decides whether the content is good enough. */
     submit(roleId: string, actor: Actor) { return transition(roleId, "gated", actor); },
@@ -254,6 +268,37 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
     /** deposit_pending → broadcast with `deposit_mode = waived`. Always a staff actor and a note (§5). */
     waiveDeposit(roleId: string, actor: Actor, note: string, opts: { broadcastDays: number }) {
       return transition(roleId, "broadcast", actor, note, { broadcastDays: opts.broadcastDays });
+    },
+    /** Pushes `broadcast_closes_at` out by `days`. Once per role, and only while it is in broadcast (§5). */
+    async extendBroadcast(roleId: string, days: number): Promise<Role> {
+      const r = await must(roleId);
+      if (r.status !== "broadcast" || !r.broadcastClosesAt) throw new Invalid("only a role in broadcast can be extended");
+      if (r.broadcastExtendedAt) throw new Invalid("this broadcast has already been extended once");
+      if (!(days > 0)) throw new Invalid("an extension needs its length in days");
+      const [row] = await db.update(schema.role)
+        .set({ broadcastClosesAt: new Date(r.broadcastClosesAt.getTime() + days * DAY_MS), broadcastExtendedAt: clock.now() })
+        .where(and(eq(schema.role.id, roleId), eq(schema.role.status, "broadcast"), isNull(schema.role.broadcastExtendedAt))).returning();
+      if (!row) throw new Invalid("this broadcast has already been extended once");
+      return row;
+    },
+    /**
+     * §5 replacement role, for a hire who left inside the guarantee: a copy of the original's content and reach with a
+     * zero fee and a waived deposit, created directly in `broadcast`. Gate and terms are inherited from the original.
+     */
+    async createReplacement(roleId: string, actor: Actor, opts: { broadcastDays: number }): Promise<Role> {
+      const o = await must(roleId);
+      if (!o.feeTerms) throw new Invalid("only a role with fee terms can be replaced");
+      if (!(opts.broadcastDays > 0)) throw new Invalid("opening a broadcast needs its length in days");
+      const now = clock.now();
+      const [row] = await db.insert(schema.role).values({
+        companyId: o.companyId, createdBy: o.createdBy, createdAt: now, title: o.title, jd: o.jd, type: o.type, ctcMin: o.ctcMin, ctcMax: o.ctcMax,
+        yearsExpMin: o.yearsExpMin, yearsExpMax: o.yearsExpMax, locations: o.locations, campusReach: o.campusReach,
+        shortlistCap: o.shortlistCap, nudgeCap: o.nudgeCap, finalGateDecisionId: o.finalGateDecisionId,
+        feeTerms: { ...o.feeTerms, amount: 0 }, feeTermsReleasedAt: o.feeTermsReleasedAt, feeTermsAcceptedAt: o.feeTermsAcceptedAt,
+        depositAmount: 0, depositMode: "waived", status: "broadcast", broadcastOpensAt: now,
+        broadcastClosesAt: new Date(now.getTime() + opts.broadcastDays * DAY_MS), replacementOfRoleId: o.id }).returning();
+      await db.insert(schema.roleEvent).values({ roleId: row!.id, fromStatus: null, toStatus: "broadcast", actor: actorRef(actor), note: `replacement for role ${o.id}`, at: now });
+      return row!;
     },
     /** shortlist_ready → closing, recording the one hire. */
     recordHire(roleId: string, matchId: string, actor: Actor) {

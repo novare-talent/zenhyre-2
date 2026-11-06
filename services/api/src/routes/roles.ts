@@ -8,6 +8,8 @@ import { requireUser } from "../middleware/auth";
 import { submitRole } from "../workflows/submitRole";
 import { appealRole } from "../workflows/appealRole";
 import { acceptTerms } from "../workflows/acceptTerms";
+import { withdrawRole } from "../workflows/withdrawRole";
+import { companyConfirmJoin } from "../workflows/confirmJoin";
 import { companyAction, COMPANY_STAGES } from "../workflows/companyAction";
 import { companyRoleView, publicCampuses, resolveCampusIds, shortlistRowView, uuidParam } from "./views";
 
@@ -98,6 +100,13 @@ roleRoutes.post("/roles/:id/terms/accept", async (c) => {
   return c.json({ role: await view(c.var.deps, role) });
 });
 
+/** §5: a company (or staff) withdraws a role from any open state. `closing` and terminal roles refuse with a 409. */
+roleRoutes.post("/roles/:id/withdraw", async (c) => {
+  const body = z.object({ note: z.string().max(2000).optional() }).parse(await c.req.json().catch(() => ({})));
+  const role = await withdrawRole(c.var.deps, { roleId: uuidParam(c.req.param("id"), "role"), user: c.var.user!, note: body.note });
+  return c.json({ role: await view(c.var.deps, role) });
+});
+
 /** §8: the shortlist is not visible to the company before `shortlist_ready`. The longlist below the line is staff-only. */
 roleRoutes.get("/roles/:id/shortlist", async (c) => {
   const role = await loadRole(c, c.req.param("id"));
@@ -127,5 +136,14 @@ roleRoutes.post("/matches/:id/actions", async (c) => {
   const out = await companyAction(deps, { matchId: uuidParam(c.req.param("id"), "match"), user: c.var.user!, stage, data });
   const [candidate] = await deps.identity.listCandidatesByIds([out.match.candidateId]);
   const campuses = await publicCampuses(deps);
-  return c.json({ match: shortlistRowView(out.match, candidate, campuses.get(candidate?.campusId ?? "")), role: await view(deps, out.role) });
+  return c.json({
+    match: shortlistRowView(out.match, candidate, campuses.get(candidate?.campusId ?? "")), role: await view(deps, out.role),
+    // Only a `left_early` action creates one (§9.2).
+    ...(out.replacement ? { replacement: await view(deps, out.replacement) } : {}),
+  });
+});
+
+/** §9.2: the company stands by a hire the candidate disputes; staff then settle it. To agree instead, mark the hire `did_not_join`. */
+roleRoutes.post("/matches/:id/confirm-join", async (c) => {
+  return c.json(await companyConfirmJoin(c.var.deps, { matchId: uuidParam(c.req.param("id"), "match"), user: c.var.user! }));
 });

@@ -44,7 +44,8 @@ export function companyRoleView(role: Role, extra: { gate: RoleGateDecision | nu
     depositAmount: role.depositAmount, depositMode: role.depositMode,
     broadcastOpensAt: role.broadcastOpensAt, broadcastClosesAt: role.broadcastClosesAt,
     shortlistReadyAt: role.shortlistReadyAt, shortlistCap: role.shortlistCap,
-    hiredMatchId: role.hiredMatchId, hiredAt: role.hiredAt, applicants: extra.applicants, createdAt: role.createdAt,
+    hiredMatchId: role.hiredMatchId, hiredAt: role.hiredAt, replacementOfRoleId: role.replacementOfRoleId,
+    applicants: extra.applicants, createdAt: role.createdAt,
   };
 }
 
@@ -67,6 +68,9 @@ export function applicationView(match: Match, role: Role, companyName: string) {
     id: match.id, stage: match.stage, appliedAt: match.appliedAt, updatedAt: match.updatedAt,
     rejectionCategory: match.stage === "rejected" ? match.rejectionCategory : null,
     joinedOn: match.stage === "hired" ? match.joinedOn : null,
+    // §9.2: a hired candidate is asked whether they joined; these say whether the question is out and whether it is settled.
+    joinPromptSentAt: match.stage === "hired" ? match.joinPromptSentAt : null,
+    joinConfirmedAt: match.stage === "hired" ? match.joinConfirmedAt : null,
     canWithdraw: withdrawTarget(match.stage) !== null,
     role: { id: role.id, title: role.title, type: role.type, locations: role.locations, ctcMin: role.ctcMin, ctcMax: role.ctcMax },
     company: { id: role.companyId, name: companyName },

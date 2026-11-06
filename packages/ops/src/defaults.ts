@@ -14,7 +14,8 @@ export const CONFIG = {
   "fee.percent_default": { schema: z.number().min(0).max(1), default: 0.10 },
   "fee.percent_senior": { schema: z.number().min(0).max(1), default: 0.20 },
   "fee.senior_years": { schema: z.number().int().nonnegative(), default: 10 },
-  "fee.replacement_days": { schema: z.number().int().nonnegative(), default: 90 },
+  // The standing guarantee. Novare's sales rep changes it per role when a company negotiates one (staff fee-terms edit, before release).
+  "fee.replacement_days": { schema: z.number().int().nonnegative(), default: 60 },
   "fee.due_days_after_join": { schema: z.number().int().positive(), default: 30 },
   "fee.reminder_days_before_due": { schema: z.number().int().positive(), default: 7 },
   "fee.join_grace_days": { schema: z.number().int().positive(), default: 7 },

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { resolveJoinDispute } from "../workflows/confirmJoin";
 import { z } from "zod";
 import { Vars } from "../context";
 import { requireUser, requireStaff } from "../middleware/auth";
@@ -31,6 +32,11 @@ adminRoutes.post("/admin/reviews/:id/resolve", async (c) => {
     const outcome = z.enum(["accept", "reject"]).parse(body.resolution);
     const campusReach = body.campusReach ? await resolveCampusIds(c.var.deps, body.campusReach) : undefined;
     const result = await gateDecision(c.var.deps, { trigger: "staff", roleId: item.refId, user: c.var.user!, outcome, reason: body.note, campusReach });
+    return c.json({ ok: true, outcome: result.outcome });
+  } else if (item.kind === "join_dispute") {
+    // §9.2: staff settle a joining dispute: the hire joined, or did not.
+    const resolution = z.enum(["joined", "did_not_join"]).parse(body.resolution);
+    const result = await resolveJoinDispute(c.var.deps, { reviewId: item.id, user: c.var.user!, resolution, note: body.note });
     return c.json({ ok: true, outcome: result.outcome });
   } else {
     await c.var.deps.ops.resolveReview(item.id, `staff:${c.var.user!.id}`, body.resolution);

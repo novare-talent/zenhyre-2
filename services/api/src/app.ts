@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { DomainError } from "@zenhyre/shared";
 import { ZodError } from "zod";
-import { AppConfig, Vars, buildDeps } from "./context";
+import { AppConfig, AppDeps, Vars, buildDeps } from "./context";
 import { sessionUser } from "./middleware/auth";
 import { authRoutes } from "./routes/auth";
 import { candidateRoutes } from "./routes/candidate";
@@ -12,8 +12,8 @@ import { applicationRoutes } from "./routes/applications";
 import { adminRoleRoutes } from "./routes/adminRoles";
 import { webhookRoutes } from "./routes/webhooks";
 
-export async function buildApp(cfg: AppConfig) {
-  const deps = await buildDeps(cfg);
+export async function buildApp(cfg: AppConfig, built?: AppDeps) {
+  const deps = built ?? await buildDeps(cfg);
   const app = new Hono<{ Variables: Vars }>();
   app.use("*", async (c, next) => { c.set("deps", deps); await next(); });
   app.use("*", sessionUser);

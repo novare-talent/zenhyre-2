@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import { Clock, DomainError, Forbidden, IllegalTransition, Invalid, NotFound } from "@zenhyre/shared";
 import { MatchActor, MatchStage, QUALIFYING_STAGES, REJECTION_CATEGORIES, RejectionCategory, SETTLED_STAGES, SYSTEM_ACTOR,
-  canMove, matchActorRef } from "./stages";
+  canMove, guaranteeEndsAt, matchActorRef } from "./stages";
 import { MatchingCandidate, MatchingRole, canApply, isMatchable } from "./filter";
 import { Fit, Scorer } from "./scorer";
 
@@ -33,7 +33,6 @@ export interface StageData {
 export interface RerankResult { promoted: Match[]; displaced: Match[]; shortlisted: number }
 export interface ApplyResult extends RerankResult { match: Match; pendingApproval: boolean }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const isCtc = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n > 0;
 const isDate = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(s + "T00:00:00Z").getTime())
   && new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s;
@@ -125,7 +124,7 @@ export function createMatchingModule(db: DbOrTx, clock: Clock, scorer: Scorer, c
       if (!m.joinConfirmedAt) throw closed("Joining has not been confirmed yet; use did not join instead.");
       const days = role?.replacementGuaranteeDays;
       if (days === undefined || !m.joinedOn) throw new Invalid("left early needs the role's replacement guarantee");
-      if (now.getTime() > new Date(m.joinedOn + "T00:00:00Z").getTime() + (days + 1) * DAY_MS) throw closed(`The ${days}-day replacement guarantee has ended.`);
+      if (now.getTime() > guaranteeEndsAt(m.joinedOn, days).getTime()) throw closed(`The ${days}-day replacement guarantee has ended.`);
     }
     return move(m, to, actor, set, eventData);
   }
@@ -266,6 +265,28 @@ export function createMatchingModule(db: DbOrTx, clock: Clock, scorer: Scorer, c
       const rows = await db.select({ roleId: schema.match.roleId, n: sql<number>`count(*)::int` }).from(schema.match)
         .where(and(inArray(schema.match.roleId, roleIds), isNotNull(schema.match.appliedAt))).groupBy(schema.match.roleId);
       return Object.fromEntries(rows.map((r) => [r.roleId, r.n]));
+    },
+
+    /** `role.join_prompt`: records that the hired candidate was asked `did_you_join`. False if they already were, or the match is no longer `hired`. */
+    async markJoinPromptSent(matchId: string): Promise<boolean> {
+      const rows = await db.update(schema.match).set({ joinPromptSentAt: clock.now() })
+        .where(and(eq(schema.match.id, matchId), eq(schema.match.stage, "hired"), isNull(schema.match.joinPromptSentAt))).returning({ id: schema.match.id });
+      return rows.length > 0;
+    },
+    /**
+     * §9.2: the hire's joining is confirmed, by the candidate, by grace (no answer), or by staff settling a dispute.
+     * Once only; from here `did_not_join` is closed and `left_early` opens. The stage stays `hired`, so the event
+     * records `hired → hired` with who confirmed.
+     */
+    async confirmJoin(matchId: string, by: "candidate" | "grace" | "staff", actor: MatchActor): Promise<Match> {
+      const m = await must(matchId);
+      if (m.stage !== "hired") throw closed("Only a recorded hire can be confirmed as joined.");
+      const now = clock.now();
+      const [row] = await db.update(schema.match).set({ joinConfirmedAt: now, joinConfirmedBy: by, updatedAt: now })
+        .where(and(eq(schema.match.id, m.id), eq(schema.match.stage, "hired"), isNull(schema.match.joinConfirmedAt))).returning();
+      if (!row) throw closed("Joining is already confirmed.");
+      await db.insert(schema.matchEvent).values({ matchId: m.id, fromStage: "hired", toStage: "hired", actor: matchActorRef(actor), actorKind: actor.kind, data: { join_confirmed_by: by }, at: now });
+      return row;
     },
 
     /** `closeRole` / `withdrawRole`: every open match on the role becomes `role_closed`. Settled matches, `hired` included, are untouched. */

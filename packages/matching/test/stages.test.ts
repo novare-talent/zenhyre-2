@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MATCH_ACTOR_KINDS, MATCH_STAGES, QUALIFYING_STAGES, SETTLED_STAGES, allowedActors, canMove, isSettled, withdrawTarget,
+import { MATCH_ACTOR_KINDS, MATCH_STAGES, QUALIFYING_STAGES, SETTLED_STAGES, allowedActors, canMove, guaranteeEndsAt, isSettled, withdrawTarget,
   type MatchActorKind, type MatchStage } from "../src/index";
 
 // §4.3, written out by hand row by row. Everything not produced here must be refused.
@@ -66,5 +66,9 @@ describe("match stage table (§4.3)", () => {
     expect(withdrawTarget("offer_accepted")).toBe("offer_reneged");
     for (const s of ["applied", "shortlisted", "viewed", "interviewed", "offered"] as const) expect(withdrawTarget(s)).toBe("withdrawn");
     for (const s of ["scored", "pending_approval", "hired", "rejected", "withdrawn", "role_closed", "did_not_join"] as const) expect(withdrawTarget(s)).toBeNull();
+  });
+  it("a replacement guarantee runs to the end of its last day, joined_on + days, in UTC", () => {
+    expect(guaranteeEndsAt("2026-11-10", 90).toISOString()).toBe("2027-02-09T00:00:00.000Z"); // 8 February is day 90
+    expect(guaranteeEndsAt("2026-12-01", 0).toISOString()).toBe("2026-12-02T00:00:00.000Z");
   });
 });

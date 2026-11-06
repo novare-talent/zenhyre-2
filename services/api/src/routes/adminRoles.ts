@@ -6,6 +6,8 @@ import { requireUser, requireStaff } from "../middleware/auth";
 import { editFeeTerms, releaseTerms } from "../workflows/releaseTerms";
 import { waiveDeposit } from "../workflows/waiveDeposit";
 import { freezeShortlist } from "../workflows/freezeShortlist";
+import { extendBroadcast } from "../workflows/extendBroadcast";
+import { mergeCompanies } from "../workflows/mergeCompanies";
 import { ROLE_JOBS, SCHEDULED_JOBS, runRoleJob, type RoleJobName, type ScheduledJobName } from "../jobs";
 import { uuidParam } from "./views";
 
@@ -44,6 +46,11 @@ adminRoleRoutes.post("/admin/roles/:id/waive-deposit", async (c) => {
   const { note } = z.object({ note: z.string().trim().min(1).max(2000) }).parse(await c.req.json());
   return c.json({ role: await waiveDeposit(c.var.deps, { roleId: uuidParam(c.req.param("id"), "role"), user: c.var.user!, note }) });
 });
+/** Once per role, while it has too few applicants: the broadcast closes `match.extension_days` later. */
+adminRoleRoutes.post("/admin/roles/:id/extend-broadcast", async (c) => {
+  const { note } = z.object({ note: z.string().max(2000).optional() }).parse(await c.req.json().catch(() => ({})));
+  return c.json({ role: await extendBroadcast(c.var.deps, { roleId: uuidParam(c.req.param("id"), "role"), user: c.var.user!, note }) });
+});
 /** Freezes the shortlist now, whether or not the window has run its course. */
 adminRoleRoutes.post("/admin/roles/:id/close-broadcast", async (c) => {
   const { note } = z.object({ note: z.string().trim().min(1).max(2000) }).parse(await c.req.json());
@@ -51,7 +58,13 @@ adminRoleRoutes.post("/admin/roles/:id/close-broadcast", async (c) => {
   return c.json(out, out.frozen ? 200 : 409);
 });
 
-/** Runs a scheduled job once (`role.close_broadcast`, `role.terms_auto_release`), or re-runs a role job (`role.gate`, `role.broadcast`) for one role. */
+/** §6.4: folds the duplicate company `:id` into `into`; its roles and users move to the survivor. */
+adminRoleRoutes.post("/admin/companies/:id/merge", async (c) => {
+  const { into, note } = z.object({ into: z.string().uuid(), note: z.string().max(2000).optional() }).parse(await c.req.json());
+  return c.json(await mergeCompanies(c.var.deps, { survivorId: into, absorbedId: uuidParam(c.req.param("id"), "company"), user: c.var.user!, note }));
+});
+
+/** Runs a scheduled job once (any name in `SCHEDULED_JOBS`), or re-runs a role job (`role.gate`, `role.broadcast`) for one role. */
 adminRoleRoutes.post("/admin/jobs/:name/run", async (c) => {
   const name = c.req.param("name");
   const { deps } = c.var;
