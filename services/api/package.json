@@ -20,6 +20,9 @@
     "@zenhyre/shared": "workspace:*",
     "@zenhyre/ops": "workspace:*",
     "@zenhyre/identity": "workspace:*",
+    "@zenhyre/gate": "workspace:*",
+    "@zenhyre/roles": "workspace:*",
+    "@zenhyre/matching": "workspace:*",
     "@zenhyre/notify": "workspace:*"
   },
   "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }

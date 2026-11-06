@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Vars } from "../context";
 import { requireUser, requireStaff } from "../middleware/auth";
 import { resolveVerification, VerificationResolution } from "../workflows/resolveVerification";
+import { gateDecision } from "../workflows/gateDecision";
+import { resolveCampusIds } from "./views";
 import { ConfigKey, CONFIG } from "@zenhyre/ops";
 
 export const adminRoutes = new Hono<{ Variables: Vars }>();
@@ -17,12 +19,18 @@ adminRoutes.get("/admin/reviews", async (c) => {
 });
 
 adminRoutes.post("/admin/reviews/:id/resolve", async (c) => {
-  const body = z.object({ resolution: z.string(), note: z.string().optional() }).parse(await c.req.json());
+  const body = z.object({ resolution: z.string(), note: z.string().optional(), campusReach: z.array(z.string().min(1)).optional() }).parse(await c.req.json());
   const item = await c.var.deps.ops.getReview(c.req.param("id"));
   if (!item) return c.json({ error: "not found" }, 404);
   if (item.kind === "verification") {
     const resolution = VerificationResolution.parse(body.resolution);
     await resolveVerification(c.var.deps, { reviewId: item.id, actor: { id: c.var.user!.id, isStaff: true }, resolution, note: body.note });
+  } else if (item.kind === "gate") {
+    // §7 stage 3: staff accept (optionally adjusting the reach) or reject with a reason. The workflow closes the item.
+    const outcome = z.enum(["accept", "reject"]).parse(body.resolution);
+    const campusReach = body.campusReach ? await resolveCampusIds(c.var.deps, body.campusReach) : undefined;
+    const result = await gateDecision(c.var.deps, { trigger: "staff", roleId: item.refId, user: c.var.user!, outcome, reason: body.note, campusReach });
+    return c.json({ ok: true, outcome: result.outcome });
   } else {
     await c.var.deps.ops.resolveReview(item.id, `staff:${c.var.user!.id}`, body.resolution);
     await c.var.deps.ops.audit(c.var.user!.id, `review.${item.kind}.${body.resolution}`, item.refType, item.refId, body.note);

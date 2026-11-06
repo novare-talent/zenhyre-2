@@ -46,6 +46,15 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.5)
 
+  packages/gate:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.5)
+
   packages/identity:
     dependencies:
       '@zenhyre/db':
@@ -61,6 +70,28 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.5)
+
+  packages/matching:
+    dependencies:
+      '@zenhyre/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zenhyre/shared':
+        specifier: workspace:*
+        version: link:../shared
+      drizzle-orm:
+        specifier: ^0.36.0
+        version: 0.36.4(postgres@3.4.9)(react@19.3.1)
+    devDependencies:
+      '@zenhyre/identity':
+        specifier: workspace:*
+        version: link:../identity
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -112,6 +143,25 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.5)
 
+  packages/roles:
+    dependencies:
+      '@zenhyre/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zenhyre/shared':
+        specifier: workspace:*
+        version: link:../shared
+      drizzle-orm:
+        specifier: ^0.36.0
+        version: 0.36.4(postgres@3.4.9)(react@19.3.1)
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.5)
+
   packages/shared:
     dependencies:
       zod:
@@ -133,15 +183,24 @@ importers:
       '@zenhyre/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@zenhyre/gate':
+        specifier: workspace:*
+        version: link:../../packages/gate
       '@zenhyre/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@zenhyre/matching':
+        specifier: workspace:*
+        version: link:../../packages/matching
       '@zenhyre/notify':
         specifier: workspace:*
         version: link:../../packages/notify
       '@zenhyre/ops':
         specifier: workspace:*
         version: link:../../packages/ops
+      '@zenhyre/roles':
+        specifier: workspace:*
+        version: link:../../packages/roles
       '@zenhyre/shared':
         specifier: workspace:*
         version: link:../../packages/shared
