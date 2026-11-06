@@ -98,5 +98,7 @@ export const SCHEDULED_JOBS = {
   /** Nightly, after the two above: close hired roles whose replacement guarantee has ended. */
   "role.guarantee_expiry": async (deps: AppDeps) =>
     sweep(deps, "role.guarantee_expiry", await deps.roles.listClosingWithHire(), async (roleId) => (await guaranteeExpiry(deps, { roleId })).closed),
+  /** Nightly: student → final_year → alumnus by `grad_date` (§6.1). */
+  "candidate.status_flip": async (deps: AppDeps) => ({ candidates: await deps.identity.refreshCandidateStatuses() }),
 } as const;
 export type ScheduledJobName = keyof typeof SCHEDULED_JOBS;

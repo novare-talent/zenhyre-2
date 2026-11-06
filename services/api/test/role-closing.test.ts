@@ -35,9 +35,9 @@ describe("withdraw (§5: any open state, by the company or staff)", () => {
   it("a gate decision that arrives after the withdrawal changes nothing", async () => {
     const id = await w.roleAt("gated", "Engineer, gated then decided");
     expect((await w.withdraw(w.ceo, id)).status).toBe(200);
+    // The review item left the staff queue with the role, and a late gate job is a no-op.
+    expect((await body(await w.staff.req("/admin/reviews?kind=gate"))).items.filter((i: any) => i.refId === id)).toEqual([]);
     expect(await body(await w.staff.req("/admin/jobs/role.gate/run", post({ roleId: id })))).toMatchObject({ ok: true });
-    const [item] = (await body(await w.staff.req("/admin/reviews?kind=gate"))).items.filter((i: any) => i.refId === id);
-    expect(await body(await w.staff.req(`/admin/reviews/${item.id}/resolve`, post({ resolution: "accept" })))).toEqual({ ok: true, outcome: "noop" });
     expect((await w.row(id)).status).toBe("withdrawn");
     expect((await w.events(id)).at(-1)!.toStatus).toBe("withdrawn");
   });
@@ -151,6 +151,7 @@ describe("role.terms_timeout (§5: 14 days after release, unaccepted)", () => {
     // One message, and it is the one that says why.
     expect(w.subjects(w.ceo).filter((s) => s.endsWith("Engineer, terms ignored")).slice(-1)).toEqual(["Role withdrawn: Engineer, terms ignored"]);
     expect(w.subjects(w.ceo)).not.toContain("Role closed: Engineer, terms ignored");
+    expect(w.t.transport.sent.find((m) => m.subject === "Role withdrawn: Engineer, terms ignored")!.text).toBe("Terms were not accepted within 14 days.");
     expect((await w.ceo.req(`/roles/${waiting}/terms/accept`, post())).status).toBe(409); // too late
 
     // The clock starts at release, and stops at acceptance.

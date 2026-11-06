@@ -19,7 +19,7 @@ export const TEMPLATES = {
   role_rejected: { channels: both, subject: (d) => `Role not accepted: ${d.roleTitle}`, text: (d) => `Reason: ${d.reason}. You may appeal once within 14 days.` },
   role_needs_review: { channels: both, subject: (d) => `Role under review: ${d.roleTitle}`, text: () => "Our team is reviewing it." },
   terms_released: { channels: both, subject: (d) => `Fee terms ready: ${d.roleTitle}`, text: (d) => `Review and accept: ${d.url}` },
-  terms_expired: { channels: both, subject: (d) => `Role withdrawn: ${d.roleTitle}`, text: () => "Terms were not accepted within 14 days." },
+  terms_expired: { channels: both, subject: (d) => `Role withdrawn: ${d.roleTitle}`, text: (d) => `Terms were not accepted within ${d.days ?? 14} days.` },
   shortlist_ready: { channels: both, subject: (d) => `Shortlist ready: ${d.roleTitle}`, text: (d) => `${d.count} candidates. ${d.url}` },
   broadcast_extended: { channels: both, subject: (d) => `Broadcast extended: ${d.roleTitle}`, text: (d) => `Now closes ${d.closesAt}.` },
   join_disputed: { channels: both, subject: (d) => `Joining disputed: ${d.candidateName}`, text: () => "The candidate reports they did not join. Respond within 3 days." },

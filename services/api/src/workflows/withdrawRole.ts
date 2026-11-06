@@ -9,11 +9,16 @@ import { resolveDepositTx } from "./resolveDeposit";
  * `closing`, `rejected` or `closed`), its open matches close, and the deposit is resolved (§9.1), which ends in
  * `closeRole`. The company gets one message: `terms_expired` when the terms timed out, `role_closed` otherwise.
  */
-export async function withdrawRoleTx(w: Wf, input: { role: Role; actor: Actor; note?: string; tell?: "role_closed" | "terms_expired" }) {
+export async function withdrawRoleTx(w: Wf, input: { role: Role; actor: Actor; note?: string; tell?: "role_closed" | "terms_expired"; tellData?: Record<string, unknown> }) {
   const withdrawn = await w.m.roles.transition(input.role.id, "withdrawn", input.actor, input.note);
+  if (input.role.status === "gated") {
+    // A role withdrawn mid-review leaves nothing for staff to decide: take it out of the gate queue.
+    const open = (await w.m.ops.listReviews({ kind: "gate", open: true })).filter((i) => i.refType === "role" && i.refId === withdrawn.id);
+    for (const i of open) await w.m.ops.resolveReview(i.id, "system", "withdrawn");
+  }
   const closedMatches = await closeMatchesTx(w, withdrawn);
   const { role } = await resolveDepositTx(w, { role: withdrawn });
-  notifyCompany(w, role.companyId, input.tell ?? "role_closed", { roleTitle: role.title });
+  notifyCompany(w, role.companyId, input.tell ?? "role_closed", { roleTitle: role.title, ...input.tellData });
   return { role, closedMatches };
 }
 
@@ -40,7 +45,7 @@ export async function termsTimeout(deps: AppDeps, input: { roleId: string }) {
     const due = role.status === "terms_pending" && !!role.feeTermsReleasedAt
       && role.feeTermsReleasedAt.getTime() + days * DAY_MS <= deps.clock.now().getTime();
     if (!due) return { withdrawn: false as const };
-    const out = await withdrawRoleTx(w, { role, actor: SYSTEM, note: `terms not accepted within ${days} days of release`, tell: "terms_expired" });
+    const out = await withdrawRoleTx(w, { role, actor: SYSTEM, note: `terms not accepted within ${days} days of release`, tell: "terms_expired", tellData: { days } });
     return { withdrawn: true as const, role: out.role };
   });
 }

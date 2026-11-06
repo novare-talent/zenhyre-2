@@ -40,7 +40,7 @@ export async function world() {
   const ceo = await seat("ceo@lab0.ai");
   const companyId = (await body(await ceo.req("/companies", post({ name: "Lab0" })))).company.id as string;
   const rival = await seat("founder@rival.io");
-  await rival.req("/companies", post({ name: "Rival" }));
+  const rivalCompanyId = (await body(await rival.req("/companies", post({ name: "Rival" })))).company.id as string;
 
   /** A final-year IIT Bombay candidate with a fixed fit score, so shortlist order is known. */
   async function candidate(name: string, score: number): Promise<Seat> {
@@ -100,6 +100,6 @@ export async function world() {
   const runJob = async (name: string) => { const res = await staff.req(`/admin/jobs/${name}/run`, post()); expect(res.status).toBe(200); return body(res); };
   const withdraw = (who: Seat, roleId: string, note?: string) => who.req(`/roles/${roleId}/withdraw`, post(note === undefined ? {} : { note }));
 
-  return { t, staff, ceo, rival, companyId, seat, relogin, candidate, roleAt, shortlisted, act, hire, row, events, matches, stages, subjects, toldClosed, runJob, withdraw };
+  return { t, staff, ceo, rival, companyId, rivalCompanyId, seat, relogin, candidate, roleAt, shortlisted, act, hire, row, events, matches, stages, subjects, toldClosed, runJob, withdraw };
 }
 export type World = Awaited<ReturnType<typeof world>>;
