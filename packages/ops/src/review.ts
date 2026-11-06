@@ -30,6 +30,12 @@ export function createReview(db: DbOrTx) {
         .where(and(eq(schema.reviewItem.id, id), isNull(schema.reviewItem.resolvedAt))).returning();
       return row ?? null;
     },
+    /** Merges `patch` into an open item's payload, e.g. the company's answer on a join dispute. */
+    async amendReview(id: string, patch: Record<string, unknown>) {
+      const [row] = await db.update(schema.reviewItem).set({ payload: sql`${schema.reviewItem.payload} || ${JSON.stringify(patch)}::jsonb` })
+        .where(and(eq(schema.reviewItem.id, id), isNull(schema.reviewItem.resolvedAt))).returning();
+      return row ?? null;
+    },
     async getReview(id: string) {
       const [row] = await db.select().from(schema.reviewItem).where(eq(schema.reviewItem.id, id));
       return row ?? null;

@@ -1,10 +1,12 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { Forbidden, NotFound } from "@zenhyre/shared";
 import { fitsType, listOpenRolesFor } from "@zenhyre/matching";
 import { Vars } from "../context";
 import { requireUser } from "../middleware/auth";
 import { applyToRole } from "../workflows/applyToRole";
 import { candidateWithdraw } from "../workflows/candidateWithdraw";
+import { answerJoin } from "../workflows/confirmJoin";
 import { applicationView, candidateRoleView, uuidParam } from "./views";
 
 /** The candidate seat: the roles open to me, applying, my applications, withdrawing. */
@@ -68,6 +70,16 @@ applicationRoutes.post("/me/applications/:id/withdraw", async (c) => {
   const candidate = await me(c);
   const { deps } = c.var;
   const match = await candidateWithdraw(deps, { matchId: uuidParam(c.req.param("id"), "application"), userId: candidate.userId });
+  const role = (await deps.roles.get(match.roleId))!;
+  return c.json({ application: applicationView(match, role, (await deps.identity.getCompany(role.companyId))?.name ?? "") });
+});
+
+/** §9.2: the hired candidate answers "did you join?". */
+applicationRoutes.post("/me/applications/:id/join", async (c) => {
+  const candidate = await me(c);
+  const { deps } = c.var;
+  const { joined } = z.object({ joined: z.boolean() }).parse(await c.req.json());
+  const match = await answerJoin(deps, { matchId: uuidParam(c.req.param("id"), "application"), userId: candidate.userId, joined });
   const role = (await deps.roles.get(match.roleId))!;
   return c.json({ application: applicationView(match, role, (await deps.identity.getCompany(role.companyId))?.name ?? "") });
 });

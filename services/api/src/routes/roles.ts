@@ -9,6 +9,7 @@ import { submitRole } from "../workflows/submitRole";
 import { appealRole } from "../workflows/appealRole";
 import { acceptTerms } from "../workflows/acceptTerms";
 import { withdrawRole } from "../workflows/withdrawRole";
+import { companyConfirmJoin } from "../workflows/confirmJoin";
 import { companyAction, COMPANY_STAGES } from "../workflows/companyAction";
 import { companyRoleView, publicCampuses, resolveCampusIds, shortlistRowView, uuidParam } from "./views";
 
@@ -136,4 +137,9 @@ roleRoutes.post("/matches/:id/actions", async (c) => {
   const [candidate] = await deps.identity.listCandidatesByIds([out.match.candidateId]);
   const campuses = await publicCampuses(deps);
   return c.json({ match: shortlistRowView(out.match, candidate, campuses.get(candidate?.campusId ?? "")), role: await view(deps, out.role) });
+});
+
+/** §9.2: the company stands by a hire the candidate disputes; staff then settle it. To agree instead, mark the hire `did_not_join`. */
+roleRoutes.post("/matches/:id/confirm-join", async (c) => {
+  return c.json(await companyConfirmJoin(c.var.deps, { matchId: uuidParam(c.req.param("id"), "match"), user: c.var.user! }));
 });

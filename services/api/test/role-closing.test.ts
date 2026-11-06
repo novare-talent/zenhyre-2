@@ -3,110 +3,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { schema } from "@zenhyre/db";
-import { fixtureGateModel, type GateRole } from "@zenhyre/gate";
-import { fixedScorer } from "@zenhyre/matching";
 import { IllegalTransition } from "@zenhyre/shared";
 import { buildDeps } from "../src/context";
 import { closeRole } from "../src/workflows/closeRole";
 import { guaranteeExpiry } from "../src/workflows/guaranteeExpiry";
-import { testApp } from "./helpers";
-
-const DAY = 24 * 60 * 60 * 1000, MINUTE = 60 * 1000;
-const L = (lakhs: number) => lakhs * 100_000 * 100;
-const post = (body?: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body ?? {}) });
-const body = async (res: Response) => (await res.json()) as any;
-const good = { type: "fresher", jd: "You will build and run the services behind our booking product. ".repeat(4),
-  ctcMin: L(12), ctcMax: L(16), yearsExpMin: 0, yearsExpMax: 1, locations: ["Bengaluru"], campusReach: ["IITB"] };
-
-type Req = ReturnType<Awaited<ReturnType<typeof testApp>>["as"]>;
-interface Seat { email: string; userId: string; req: Req }
-type Before = "draft" | "gated" | "rejected" | "terms_pending" | "terms_released" | "deposit_pending" | "broadcast";
-
-/** A fresh database with one campus, a staff seat, a company and its rival. Each describe gets its own, so one block's clock cannot age another's roles. */
-async function world() {
-  const scores: Record<string, number> = {};
-  let borderline = false;
-  const t = await testApp("2026-11-05T10:00:00Z", {
-    scorer: fixedScorer(scores),
-    gateModel: fixtureGateModel((r: GateRole) => ({ score: borderline ? 55 : 85, suggested_reach: r.campusReach, concerns: [], reason: borderline ? "Borderline." : "A good fit." })),
-  });
-  await t.db.insert(schema.campus).values({ name: "IIT Bombay", shortCode: "IITB", emailDomains: ["iitb.ac.in"] });
-
-  const seat = async (email: string): Promise<Seat> => {
-    const s = await t.signIn(email);
-    return { email, userId: s.json.userId, req: t.as(s.cookie) };
-  };
-  /** Sessions last 30 days: sign in again after moving the clock a long way. */
-  const relogin = async (...seats: Seat[]) => { for (const s of seats) s.req = (await seat(s.email)).req; };
-
-  const staff = await seat("ops@novaretalent.com");
-  await t.db.update(schema.user).set({ isStaff: true }).where(eq(schema.user.id, staff.userId));
-  const ceo = await seat("ceo@lab0.ai");
-  const companyId = (await body(await ceo.req("/companies", post({ name: "Lab0" })))).company.id as string;
-  const rival = await seat("founder@rival.io");
-  await rival.req("/companies", post({ name: "Rival" }));
-
-  /** A final-year IIT Bombay candidate with a fixed fit score, so shortlist order is known. */
-  async function candidate(name: string, score: number): Promise<Seat> {
-    const s = await seat(`${name}@iitb.ac.in`);
-    expect((await s.req("/candidates", post({ gradDate: "2027-06-30", course: "B.Tech CSE", rollNumber: null }))).status).toBe(201);
-    scores[s.userId] = score;
-    return s;
-  }
-
-  /** Creates a role as the company and walks it to `status` through the real routes. */
-  async function roleAt(status: Before, title: string): Promise<string> {
-    const created = await ceo.req(`/companies/${companyId}/roles`, post({ ...good, title, ...(status === "rejected" ? { jd: "Too short." } : {}) }));
-    expect(created.status).toBe(201);
-    const id = (await body(created)).role.id as string;
-    if (status === "draft") return id;
-    borderline = status === "gated"; // a borderline score waits for a person, so the role stays `gated`
-    const submitted = await ceo.req(`/roles/${id}/submit`, post());
-    borderline = false;
-    expect(submitted.status).toBe(200);
-    if (status === "gated" || status === "rejected" || status === "terms_pending") return id;
-    expect((await staff.req(`/admin/roles/${id}/release-terms`, post())).status).toBe(200);
-    if (status === "terms_released") return id;
-    expect((await ceo.req(`/roles/${id}/terms/accept`, post())).status).toBe(200);
-    if (status === "deposit_pending") return id;
-    expect((await staff.req(`/admin/roles/${id}/waive-deposit`, post({ note: "Pilot customer." }))).status).toBe(200);
-    return id;
-  }
-  /** A role in `shortlist_ready` with `applicants` on its shortlist; returns each one's match id, by email. */
-  async function shortlisted(title: string, applicants: Seat[]) {
-    const id = await roleAt("broadcast", title);
-    const match: Record<string, string> = {};
-    for (const s of applicants) {
-      const res = await s.req(`/me/roles/${id}/apply`, post());
-      expect(res.status).toBe(201);
-      match[s.email] = (await body(res)).application.id;
-    }
-    expect((await staff.req(`/admin/roles/${id}/close-broadcast`, post({ note: "Company asked to move early." }))).status).toBe(200);
-    return { id, match };
-  }
-  const act = (matchId: string, payload: Record<string, unknown>) => ceo.req(`/matches/${matchId}/actions`, post(payload));
-  /** Takes a shortlisted match all the way to `hired`. */
-  async function hire(matchId: string, joinedOn: string) {
-    for (const step of [{ stage: "viewed" }, { stage: "interviewed" }, { stage: "offered", offeredCtc: L(14) }, { stage: "offer_accepted" },
-      { stage: "hired", hiredCtc: L(14), joinedOn }]) {
-      expect((await act(matchId, step)).status, step.stage).toBe(200);
-    }
-  }
-
-  const row = async (roleId: string) => (await t.db.select().from(schema.role).where(eq(schema.role.id, roleId)))[0]!;
-  const events = (roleId: string) => t.db.select().from(schema.roleEvent).where(eq(schema.roleEvent.roleId, roleId)).orderBy(asc(schema.roleEvent.seq));
-  /** candidate user id → their match on the role. */
-  const matches = async (roleId: string) => new Map((await t.db.select().from(schema.match).where(eq(schema.match.roleId, roleId))).map((m) => [m.candidateId, m]));
-  const stages = async (roleId: string, ...seats: Seat[]) => { const all = await matches(roleId); return seats.map((s) => all.get(s.userId)?.stage); };
-  const subjects = (s: Seat) => t.transport.sent.filter((m) => m.to === s.email).map((m) => m.subject);
-  /** How many times a candidate was told the role closed. */
-  const toldClosed = (s: Seat, title: string) => t.transport.sent.filter((m) => m.to === s.email && m.subject === `Update on ${title}` && m.text === "Status: role_closed").length;
-  const runJob = async (name: string) => { const res = await staff.req(`/admin/jobs/${name}/run`, post()); expect(res.status).toBe(200); return body(res); };
-  const withdraw = (who: Seat, roleId: string, note?: string) => who.req(`/roles/${roleId}/withdraw`, post(note === undefined ? {} : { note }));
-
-  return { t, staff, ceo, rival, companyId, seat, relogin, candidate, roleAt, shortlisted, act, hire, row, events, matches, stages, subjects, toldClosed, runJob, withdraw };
-}
-type World = Awaited<ReturnType<typeof world>>;
+import { DAY, MINUTE, body, post, world, type Seat, type World } from "./world";
 
 describe("withdraw (§5: any open state, by the company or staff)", () => {
   let w: World, a: Seat, b: Seat, c: Seat, d: Seat;
@@ -272,7 +173,7 @@ describe("role.terms_timeout (§5: 14 days after release, unaccepted)", () => {
 
 describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire to closed)", () => {
   let w: World, a: Seat, b: Seat, c: Seat, d: Seat;
-  let roleId: string, laterId: string, match: Record<string, string>, laterMatch: Record<string, string>;
+  let roleId: string, laterId: string, unaskedId: string, match: Record<string, string>;
   const title = "Engineer, hired";
   beforeAll(async () => {
     w = await world();
@@ -284,8 +185,19 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
     ({ id: roleId, match } = await w.shortlisted(title, [a, b, c])); // d is scored and nudged, but never applies
     expect((await w.act(match[b.email]!, { stage: "rejected", rejectionCategory: "skills" })).status).toBe(200);
     await w.hire(match[a.email]!, "2026-11-10");
-    ({ id: laterId, match: laterMatch } = await w.shortlisted("Engineer, hired later", [b]));
-    await w.hire(laterMatch[b.email]!, "2026-11-20");
+    const later = await w.shortlisted("Engineer, hired later", [b]);
+    laterId = later.id;
+    await w.hire(later.match[b.email]!, "2026-11-20");
+
+    // Joining is confirmed first (§9.2): each hire is asked once its joining date has come, and a week's silence counts as yes.
+    w.t.clock.set("2026-11-21T00:00:00Z");
+    expect(await w.runJob("role.join_prompt")).toMatchObject({ roles: 2 });
+    w.t.clock.advance(7 * DAY);
+    expect(await w.runJob("role.join_grace")).toMatchObject({ roles: 2 });
+    // A third hire is never asked, so its joining stays unconfirmed.
+    const unasked = await w.shortlisted("Engineer, never asked", [d]);
+    unaskedId = unasked.id;
+    await w.hire(unasked.match[d.email]!, "2026-11-12");
     expect(await w.row(roleId)).toMatchObject({ status: "closing", depositMode: "waived", hiredMatchId: match[a.email], feeTerms: { replacement_guarantee_days: 90 } });
 
     // 90 days from 10 November: 8 February is the last day of the guarantee.
@@ -307,8 +219,7 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
     expect(trail.at(-1)).toMatchObject({ fromStatus: "closing", toStatus: "closed", actor: "system", note: "90-day replacement guarantee ended" });
 
     expect(await w.stages(roleId, a, b, c, d)).toEqual(["hired", "rejected", "role_closed", "role_closed"]);
-    // Slice 1 does not wait for a join confirmation, and does not invent one either.
-    expect((await w.matches(roleId)).get(a.userId)).toMatchObject({ stage: "hired", joinedOn: "2026-11-10", joinConfirmedAt: null, joinConfirmedBy: null });
+    expect((await w.matches(roleId)).get(a.userId)).toMatchObject({ stage: "hired", joinedOn: "2026-11-10", joinConfirmedBy: "grace" });
     // Told: the applicant whose match closed. Not told: the hire, the rejected applicant, the candidate who never applied.
     expect([a, b, c, d].map((s) => w.toldClosed(s, title))).toEqual([0, 0, 1, 0]);
     expect(w.subjects(w.ceo).filter((s) => s === `Role closed: ${title}`)).toHaveLength(1);
@@ -337,13 +248,13 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
     expect((await w.row(draft)).status).toBe("draft");
   });
 
-  it("can be tightened to wait for a confirmed join, as the full spec requires", async () => {
-    w.t.clock.set("2027-02-19T00:00:01Z"); // the later hire's guarantee has now ended too
+  it("holds a hire whose joining was never confirmed, however long ago its guarantee ended", async () => {
+    w.t.clock.set("2027-02-19T00:00:01Z"); // the guarantees of both remaining hires have ended
+    expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 1 });
+    expect((await w.row(laterId)).status).toBe("closed");
+    expect((await w.row(unaskedId)).status).toBe("closing");
     const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test" });
-    expect(await guaranteeExpiry(deps, { roleId: laterId, requireJoinConfirmation: true })).toEqual({ closed: false, reason: "joining not confirmed" });
-    expect((await w.row(laterId)).status).toBe("closing");
-    await w.t.db.update(schema.match).set({ joinConfirmedAt: w.t.clock.now(), joinConfirmedBy: "grace" }).where(eq(schema.match.id, laterMatch[b.email]!));
-    expect(await guaranteeExpiry(deps, { roleId: laterId, requireJoinConfirmation: true })).toMatchObject({ closed: true, role: { status: "closed" } });
+    expect(await guaranteeExpiry(deps, { roleId: unaskedId })).toEqual({ closed: false, reason: "joining not confirmed" });
     expect(await guaranteeExpiry(deps, { roleId: laterId })).toEqual({ closed: false, reason: "not closing on a hire" });
   });
 });

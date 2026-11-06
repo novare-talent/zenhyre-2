@@ -6,6 +6,7 @@ import { releaseTerms } from "./workflows/releaseTerms";
 import { termsTimeout } from "./workflows/withdrawRole";
 import { darkCheck } from "./workflows/darkCheck";
 import { guaranteeExpiry } from "./workflows/guaranteeExpiry";
+import { joinGrace, joinPrompt } from "./workflows/confirmJoin";
 
 /** Jobs a workflow enqueues after it commits (§3.3). Each takes the role it is about. */
 export const ROLE_JOBS = {
@@ -88,7 +89,13 @@ export const SCHEDULED_JOBS = {
   "role.dark_check": async (deps: AppDeps) =>
     sweep(deps, "role.dark_check", await deps.roles.listShortlistsDark(await deps.ops.config.get("deposit.dark_days")),
       async (roleId) => (await darkCheck(deps, { roleId })).abandoned),
-  /** Nightly: close hired roles whose replacement guarantee has ended. */
+  /** Nightly: ask each hire "did you join?" once its joining date has come. */
+  "role.join_prompt": async (deps: AppDeps) =>
+    sweep(deps, "role.join_prompt", await deps.roles.listClosingWithHire(), async (roleId) => (await joinPrompt(deps, { roleId })).sent),
+  /** Nightly: confirm hires nobody disputed within the grace period; reverse hires whose dispute the company left unanswered. */
+  "role.join_grace": async (deps: AppDeps) =>
+    sweep(deps, "role.join_grace", await deps.roles.listClosingWithHire(), async (roleId) => (await joinGrace(deps, { roleId })).outcome !== "none"),
+  /** Nightly, after the two above: close hired roles whose replacement guarantee has ended. */
   "role.guarantee_expiry": async (deps: AppDeps) =>
     sweep(deps, "role.guarantee_expiry", await deps.roles.listClosingWithHire(), async (roleId) => (await guaranteeExpiry(deps, { roleId })).closed),
 } as const;

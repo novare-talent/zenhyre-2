@@ -23,6 +23,7 @@ export const TEMPLATES = {
   shortlist_ready: { channels: both, subject: (d) => `Shortlist ready: ${d.roleTitle}`, text: (d) => `${d.count} candidates. ${d.url}` },
   broadcast_extended: { channels: both, subject: (d) => `Broadcast extended: ${d.roleTitle}`, text: (d) => `Now closes ${d.closesAt}.` },
   join_disputed: { channels: both, subject: (d) => `Joining disputed: ${d.candidateName}`, text: () => "The candidate reports they did not join. Respond within 3 days." },
+  did_you_join: { channels: both, subject: (d) => `Did you join ${d.companyName}?`, text: (d) => `${d.companyName} recorded you as hired for ${d.roleTitle}. Tell us whether you joined: ${d.url}` },
   hire_recorded: { channels: both, subject: (d) => `Hire recorded: ${d.roleTitle}`, text: () => "Thanks. We'll confirm joining with the candidate." },
   role_closed: { channels: both, subject: (d) => `Role closed: ${d.roleTitle}`, text: () => "" },
   replacement_created: { channels: both, subject: (d) => `Replacement search started: ${d.roleTitle}`, text: () => "" },

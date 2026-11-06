@@ -67,6 +67,9 @@ export function applicationView(match: Match, role: Role, companyName: string) {
     id: match.id, stage: match.stage, appliedAt: match.appliedAt, updatedAt: match.updatedAt,
     rejectionCategory: match.stage === "rejected" ? match.rejectionCategory : null,
     joinedOn: match.stage === "hired" ? match.joinedOn : null,
+    // §9.2: a hired candidate is asked whether they joined; these say whether the question is out and whether it is settled.
+    joinPromptSentAt: match.stage === "hired" ? match.joinPromptSentAt : null,
+    joinConfirmedAt: match.stage === "hired" ? match.joinConfirmedAt : null,
     canWithdraw: withdrawTarget(match.stage) !== null,
     role: { id: role.id, title: role.title, type: role.type, locations: role.locations, ctcMin: role.ctcMin, ctcMax: role.ctcMax },
     company: { id: role.companyId, name: companyName },
