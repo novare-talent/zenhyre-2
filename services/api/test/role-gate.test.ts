@@ -353,3 +353,45 @@ describe("after the freeze", () => {
     expect((await body(await ceo(`/matches/${apps[1]}/actions`, post({ stage: "left_early" })))).error).toBe("not_supported");
   });
 });
+
+
+describe("broadcast extension (§5: staff, once, by 7 days, under 10 applicants)", () => {
+  const toBroadcast = async (title: string) => {
+    const role = await submit({ title });
+    await staff(`/admin/roles/${role.id}/release-terms`, post());
+    await ceo(`/roles/${role.id}/terms/accept`, post());
+    return role.id as string;
+  };
+  it("moves the close date out once, on the record, and tells the company", async () => {
+    const id = await toBroadcast("ML engineer");
+    expect((await staff(`/admin/roles/${id}/extend-broadcast`, post())).status).toBe(400); // not in broadcast yet
+    await staff(`/admin/roles/${id}/waive-deposit`, post({ note: "Pilot." }));
+    const closes = (await row(id)).broadcastClosesAt!;
+    expect((await ceo(`/admin/roles/${id}/extend-broadcast`, post())).status).toBe(403);
+
+    const res = await staff(`/admin/roles/${id}/extend-broadcast`, post({ note: "Two applicants so far." }));
+    expect(res.status).toBe(200);
+    expect(await row(id)).toMatchObject({ status: "broadcast", broadcastClosesAt: new Date(closes.getTime() + 7 * DAY), broadcastExtendedAt: t.clock.now() });
+    expect(subjects(ceoEmail)).toContain("Broadcast extended: ML engineer");
+    const audit = await t.db.select().from(schema.staffAction).where(and(eq(schema.staffAction.refId, id), eq(schema.staffAction.action, "role.broadcast.extend")));
+    expect(audit).toMatchObject([{ actorUserId: staffId, note: "Two applicants so far." }]);
+
+    const again = await staff(`/admin/roles/${id}/extend-broadcast`, post());
+    expect(again.status).toBe(400);
+    expect((await body(again)).message).toMatch(/already been extended/);
+    expect((await row(id)).broadcastClosesAt).toEqual(new Date(closes.getTime() + 7 * DAY));
+  });
+  it("is refused once the role has enough applicants", async () => {
+    const id = await toBroadcast("Research engineer");
+    await staff(`/admin/roles/${id}/waive-deposit`, post({ note: "Pilot." }));
+    await staff("/admin/config/match.extension_min_applicants", put({ value: 1 }));
+    const s = t.as((await t.signIn("ext1@iitb.ac.in")).cookie);
+    await s("/candidates", post({ gradDate: "2027-06-30", course: "B.Tech", rollNumber: null }));
+    expect((await s(`/me/roles/${id}/apply`, post())).status).toBe(201);
+    const res = await staff(`/admin/roles/${id}/extend-broadcast`, post());
+    expect(res.status).toBe(409);
+    expect(await body(res)).toMatchObject({ error: "not_extendable" });
+    expect((await row(id)).broadcastExtendedAt).toBeNull();
+    await staff("/admin/config/match.extension_min_applicants", put({ value: 10 }));
+  });
+});

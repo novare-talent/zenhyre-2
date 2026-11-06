@@ -269,6 +269,18 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
     waiveDeposit(roleId: string, actor: Actor, note: string, opts: { broadcastDays: number }) {
       return transition(roleId, "broadcast", actor, note, { broadcastDays: opts.broadcastDays });
     },
+    /** Pushes `broadcast_closes_at` out by `days`. Once per role, and only while it is in broadcast (§5). */
+    async extendBroadcast(roleId: string, days: number): Promise<Role> {
+      const r = await must(roleId);
+      if (r.status !== "broadcast" || !r.broadcastClosesAt) throw new Invalid("only a role in broadcast can be extended");
+      if (r.broadcastExtendedAt) throw new Invalid("this broadcast has already been extended once");
+      if (!(days > 0)) throw new Invalid("an extension needs its length in days");
+      const [row] = await db.update(schema.role)
+        .set({ broadcastClosesAt: new Date(r.broadcastClosesAt.getTime() + days * DAY_MS), broadcastExtendedAt: clock.now() })
+        .where(and(eq(schema.role.id, roleId), eq(schema.role.status, "broadcast"), isNull(schema.role.broadcastExtendedAt))).returning();
+      if (!row) throw new Invalid("this broadcast has already been extended once");
+      return row;
+    },
     /** shortlist_ready → closing, recording the one hire. */
     recordHire(roleId: string, matchId: string, actor: Actor) {
       return transition(roleId, "closing", actor, null, { hiredMatchId: matchId });
