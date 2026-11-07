@@ -69,6 +69,8 @@ export const candidate = pgTable("candidate", {
 });
 
 export interface CandidateProfile {
+  /** Shown to companies on a shortlist and to the association in its queue. */
+  name?: string;
   headline?: string;
   skills?: string[];
   years_experience?: number;

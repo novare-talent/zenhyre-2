@@ -1,31 +1,38 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { MiniBoard } from "@/components/Board";
 import { Countdown } from "@/components/Clock";
 import { Arrow, Chevron } from "@/components/Icons";
 import { useRules } from "@/components/Rules";
-import { BOARD_ROLES, type BoardRole } from "@/data/fixtures";
+import { useNotify } from "@/components/Toasts";
+import type { CandidateRoleView } from "@/lib/api-types";
 import { ctcBand, STAGE_LABEL } from "@/lib/rules";
+import { zh } from "@/lib/zh";
 import { useCandidate } from "@/seats/candidate";
 
 const TYPE = { intern: "Internship", fresher: "Fresher role", experienced: "Experienced role" } as const;
 const month = (iso: string) => new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(new Date(`${iso}T00:00:00`));
 
-export function RolesForYou() {
+export function RolesForYou({ roles }: { roles: CandidateRoleView[] }) {
   const rules = useRules();
-  const { me, verificationState, apps, apply, open, profile, retryVerification } = useCandidate();
+  const router = useRouter();
+  const notify = useNotify();
+  const { me, verificationState, open, profile, codes, retryVerification } = useCandidate();
   const [openId, setOpenId] = useState<string | null>(null);
-  // §8 step 2: the role's type must fit where the candidate is in their studies or career.
-  const fits = (r: BoardRole) => me.status === "student" ? r.type === "intern"
-    : me.status === "final_year" ? r.type !== "experienced"
-    : profile.yearsExperience <= 1 ? r.type === "fresher"
-    : r.type === "experienced" && profile.yearsExperience >= r.yearsExp[0] && profile.yearsExperience <= r.yearsExp[1];
-  const roles = BOARD_ROLES.filter((r) => r.reach.includes(me.campusCode) && fits(r));
+  const [busy, setBusy] = useState<string | null>(null);
   const verified = verificationState === "verified";
   const why = me.status === "student" ? "Internships only, until your final year."
     : me.status === "final_year" ? `Internships and fresher roles, because you graduate in ${month(me.gradDate)}.`
     : `Roles for ${profile.yearsExperience} ${profile.yearsExperience === 1 ? "year" : "years"} of experience. Update it in your profile.`;
+
+  const apply = async (r: CandidateRoleView) => {
+    setBusy(r.id);
+    try { await zh(`/me/roles/${r.id}/apply`, { method: "POST" }); notify(`Applied: ${r.title}`); router.refresh(); }
+    catch (err) { notify((err as Error).message); }
+    finally { setBusy(null); }
+  };
 
   return (
     <div className="work wrap">
@@ -49,20 +56,20 @@ export function RolesForYou() {
         ) : (
           <ul className="rows">
             {roles.map((r, i) => {
-              const app = apps.find((a) => a.id === r.id);
               const isOpen = openId === r.id;
+              const reach = codes(r.campusReach);
               return (
                 <li key={r.id} className={`row post${isOpen ? " is-open" : ""}`} style={{ "--i": i + 2 } as React.CSSProperties}>
                   <h3 style={{ font: "inherit" }}>
                     <button type="button" className="row__hit role-row" aria-expanded={isOpen} aria-controls={`role-${r.id}`} onClick={() => setOpenId(isOpen ? null : r.id)}>
                       <span>
                         <span className="role-row__title">{r.title}</span>
-                        <span className="meta" style={{ display: "block", marginTop: "0.2rem" }}>{r.company}. {TYPE[r.type]}, {ctcBand(r.type, r.ctcMin, r.ctcMax)}. {r.locations.join(" or ")}.</span>
+                        <span className="meta" style={{ display: "block", marginTop: "0.2rem" }}>{r.company.name}. {TYPE[r.type]}, {ctcBand(r.type, r.ctcMin, r.ctcMax)}. {r.locations.join(" or ")}.</span>
                       </span>
                       <span className="role-row__right">
-                        <span className="small"><Countdown ms={r.closesInMs} /></span>
+                        <span className="small">{r.broadcastClosesAt ? <Countdown until={r.broadcastClosesAt} /> : null}</span>
                         <span className="chips" style={{ justifyContent: "flex-end", alignItems: "center" }}>
-                          {app ? <span className="tag tag--ink">{STAGE_LABEL[app.stage]}</span> : r.nudged && open && verified ? <span className="tag tag--lit">Nudged</span> : null}
+                          {r.application ? <span className="tag tag--ink">{STAGE_LABEL[r.application.stage]}</span> : r.nudged && open ? <span className="tag tag--lit">Nudged</span> : null}
                           <Chevron />
                         </span>
                       </span>
@@ -70,13 +77,13 @@ export function RolesForYou() {
                   </h3>
                   {isOpen && (
                     <div className="row__body post" id={`role-${r.id}`}>
-                      <p className="measure">{r.jd}</p>
-                      <p className="small">Broadcast to {r.reach.length === 23 ? "all 23 campuses" : `${r.reach.length} campuses`}, yours included. <MiniBoard reach={r.reach} /></p>
+                      <p className="measure" style={{ whiteSpace: "pre-line" }}>{r.jd}</p>
+                      <p className="small">Broadcast to {reach.length === 23 ? "all 23 campuses" : `${reach.length} ${reach.length === 1 ? "campus" : "campuses"}`}, yours included. <MiniBoard reach={reach} /></p>
                       <div className="actions">
-                        {app
+                        {r.application
                           ? <Link href="/candidate/applications" className="btn">Track this application<Arrow /></Link>
-                          : <button type="button" className="btn btn--ink" disabled={!verified} onClick={() => apply(r.id)}>Apply with your profile<Arrow /></button>}
-                        {!app && <span className="meta">{verified ? "One step. Your saved profile goes with it." : "Opens once you are verified."}</span>}
+                          : <button type="button" className="btn btn--ink" disabled={!verified || busy === r.id} onClick={() => apply(r)}>{busy === r.id ? "Applying" : "Apply with your profile"}<Arrow /></button>}
+                        {!r.application && <span className="meta">{verified ? "One step. Your saved profile goes with it." : "Opens once you are verified."}</span>}
                       </div>
                     </div>
                   )}

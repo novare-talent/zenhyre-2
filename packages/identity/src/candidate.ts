@@ -14,7 +14,7 @@ export function deriveStatus(gradDate: string, now: Date, finalYearMonths = 12):
 }
 
 export interface CreateCandidateInput {
-  userId: string; email: string; gradDate: string; course: string; rollNumber: string | null;
+  userId: string; email: string; name?: string; gradDate: string; course: string; rollNumber: string | null;
   /** alumni direct request only */
   campusShortCode?: string; claimed?: { batch: string; branch: string; linkedinUrl: string };
 }
@@ -51,7 +51,7 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
         rollNumberFlag: rollFlag, status: deriveStatus(input.gradDate, now, opts.finalYearMonths),
         verificationState: state, verificationSource: source, verificationAttempts: byEmail ? 0 : 1,
         verifiedBy: byEmail ? "system" : null, verifiedAt: byEmail ? now : null,
-        profile: input.claimed ? { linkedin_url: input.claimed.linkedinUrl, claimed: input.claimed } : {},
+        profile: { ...(input.name ? { name: input.name } : {}), ...(input.claimed ? { linkedin_url: input.claimed.linkedinUrl, claimed: input.claimed } : {}) },
       }).returning();
       return row!;
     },

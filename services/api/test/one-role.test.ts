@@ -5,7 +5,7 @@ import { testApp } from "./helpers";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 const post = (cookie: string, path: string, body: unknown) => t.as(cookie)(path, { method: "POST", body: JSON.stringify(body) });
-const alum = { campusShortCode: "IITB", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } };
+const alum = { name: "Test Alum", campusShortCode: "IITB", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } };
 async function staff() {
   const s = await t.signIn("ops@novaretalent.com");
   await t.db.update(schema.user).set({ isStaff: true }).where(eq(schema.user.id, s.json.userId));
@@ -24,7 +24,7 @@ afterAll(() => t.close());
 describe("who may log in as what", () => {
   it("candidates use a campus LDAP address or a personal mailbox, never a work address", async () => {
     const ldap = await t.signIn("190050001@iitb.ac.in");
-    expect((await post(ldap.cookie, "/candidates", { gradDate: "2027-05-01", course: "B.Tech CS", rollNumber: "190050001" })).status).toBe(201);
+    expect((await post(ldap.cookie, "/candidates", { name: "LDAP Student", gradDate: "2027-05-01", course: "B.Tech CS", rollNumber: "190050001" })).status).toBe(201);
     const personal = await t.signIn("someone@gmail.com");
     expect((await post(personal.cookie, "/candidates", alum)).status).toBe(201);
     const work = await t.signIn("someone@bigco.com");

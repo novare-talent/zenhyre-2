@@ -35,7 +35,7 @@ export function Referrals() {
                       </p>
                     </div>
                     <div className="role-row__right">
-                      {role ? <span className="small"><Countdown ms={role.closesInMs} /></span> : <span className="tag tag--quiet">Always open</span>}
+                      {role ? <span className="small"><Countdown until={new Date(Date.now() + role.closesInMs)} /></span> : <span className="tag tag--quiet">Always open</span>}
                     </div>
                   </div>
                   <div className="linkbox">

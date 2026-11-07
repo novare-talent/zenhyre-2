@@ -89,7 +89,7 @@ export function shortlistRowView(match: Match, candidate: CandidateRow | undefin
     offeredCtc: match.offeredCtc, hiredCtc: match.hiredCtc, joinedOn: match.joinedOn,
     rejectionCategory: match.rejectionCategory, rejectionNote: match.rejectionNote, joinConfirmedAt: match.joinConfirmedAt,
     candidate: candidate ? {
-      id: candidate.userId, campus: campus ?? null, course: candidate.course, gradDate: candidate.gradDate, status: candidate.status,
+      id: candidate.userId, name: p.name ?? null, campus: campus ?? null, course: candidate.course, gradDate: candidate.gradDate, status: candidate.status,
       profile: {
         headline: p.headline ?? null, skills: p.skills ?? [], yearsExperience: p.years_experience ?? null,
         currentCompany: p.current_company ?? null, currentTitle: p.current_title ?? null,

@@ -17,6 +17,7 @@ async function post(path: string, body: unknown): Promise<string | null> {
 /** §6.1: a campus email is verified at once; anyone else asks their association (direct request). */
 export function CandidateSetup({ campusCode, thisYear }: { campusCode: string | null; thisYear: number }) {
   const student = !!campusCode;
+  const [name, setName] = useState("");
   const [campus, setCampus] = useState("");
   const [course, setCourse] = useState("");
   const [branch, setBranch] = useState("");
@@ -33,14 +34,18 @@ export function CandidateSetup({ campusCode, thisYear }: { campusCode: string | 
     setBusy(true); setProblem(null);
     const gradDate = `${year}-${month}-01`;
     const err = await post("/api/onboarding/candidate", student
-      ? { gradDate, course, rollNumber: roll.trim() }
-      : { gradDate, course, rollNumber: null, campusShortCode: campus, claimed: { batch: year, branch, linkedinUrl: linkedin.trim() } });
+      ? { name: name.trim(), gradDate, course, rollNumber: roll.trim() }
+      : { name: name.trim(), gradDate, course, rollNumber: null, campusShortCode: campus, claimed: { batch: year, branch, linkedinUrl: linkedin.trim() } });
     if (err) { setProblem(err); setBusy(false); return; }
     window.location.assign("/candidate");
   };
 
   return (
     <form className="form sheet sheet__pad" onSubmit={submit}>
+      <div className="field">
+        <label htmlFor="name">Full name</label>
+        <input id="name" className="input" required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={120} />
+      </div>
       {student ? (
         <p className="note"><b>{campusOf(campusCode!).name}</b>Taken from your campus email. You will be verified as soon as you finish.</p>
       ) : (

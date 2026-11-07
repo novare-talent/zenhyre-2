@@ -14,6 +14,7 @@ candidateRoutes.use("/me/*", requireUser);
 candidateRoutes.use("/campuses", requireUser);
 
 const signUp = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
   gradDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), course: z.string().min(1), rollNumber: z.string().nullable().optional(),
   campusShortCode: z.string().optional(),
   claimed: z.object({ batch: z.string(), branch: z.string(), linkedinUrl: z.string() }).optional(),
@@ -26,7 +27,7 @@ candidateRoutes.post("/candidates", async (c) => {
   const emailRow = (await c.var.deps.identity.emailsFor(c.var.user!.id)).find((e) => e.isPrimary)!;
   await assertFreeFor(c.var.deps.identity, c.var.user!.id, "candidate");
   assertCandidateEmail(await emailKind(c.var.deps.identity, await c.var.deps.ops.config.get("identity.freemail_domains"), emailRow.email));
-  const candidate = await signUpCandidate(c.var.deps, { userId: c.var.user!.id, email: emailRow.email, gradDate: body.gradDate, course: body.course,
+  const candidate = await signUpCandidate(c.var.deps, { userId: c.var.user!.id, email: emailRow.email, name: body.name, gradDate: body.gradDate, course: body.course,
     rollNumber: body.rollNumber ?? null, campusShortCode: body.campusShortCode, claimed: body.claimed });
   return c.json({ candidate }, 201);
 });
@@ -34,7 +35,7 @@ candidateRoutes.post("/candidates", async (c) => {
 candidateRoutes.get("/me/profile", async (c) => c.json({ candidate: await c.var.deps.identity.getCandidate(c.var.user!.id) }));
 
 const profilePatch = z.object({
-  headline: z.string().optional(), skills: z.array(z.string()).optional(), years_experience: z.number().min(0).optional(),
+  name: z.string().trim().min(1).max(120).optional(), headline: z.string().optional(), skills: z.array(z.string()).optional(), years_experience: z.number().min(0).optional(),
   current_company: z.string().optional(), current_title: z.string().optional(), preferred_roles: z.array(z.string()).optional(),
   preferred_locations: z.array(z.string()).optional(), notice_period_days: z.number().int().min(0).optional(),
   current_ctc: z.number().int().min(0).optional(), linkedin_url: z.string().optional(), cv_url: z.string().optional(),

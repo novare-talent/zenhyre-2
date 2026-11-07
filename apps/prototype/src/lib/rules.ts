@@ -62,7 +62,8 @@ export function evaluateRules(rules: Rules, role: RoleDraft): GateOutcome {
   return gateRules({ ...role, campusReach: role.reach }, { blocklist: rules.blocklist, minCtc: rules.minCtc });
 }
 
-export function ctcBand(type: RoleType, min: Paise, max: Paise): string {
+export function ctcBand(type: RoleType, min: Paise | null, max: Paise | null): string {
+  if (min === null || max === null) return "Pay not set";
   if (type === "intern") return `${formatPaise(Math.round(min / 12))} to ${formatPaise(Math.round(max / 12))} a month`;
   return `${lpa(min).replace(" LPA", "")} to ${lpa(max)}`;
 }
@@ -77,13 +78,13 @@ export const ROLE_STATE_LABEL: Record<RoleStatus, string> = {
 
 /** §4.3 match stages a company can move through, in order. */
 export const STAGE_ORDER = ["applied", "shortlisted", "viewed", "interviewed", "offered", "offer_accepted", "hired"] as const;
-export type Stage = (typeof STAGE_ORDER)[number] | "rejected" | "withdrawn" | "offer_reneged" | "did_not_join" | "role_closed";
+export type Stage = (typeof STAGE_ORDER)[number] | "scored" | "pending_approval" | "rejected" | "withdrawn" | "offer_reneged" | "did_not_join" | "left_early" | "declined_by_staff" | "role_closed";
 export const STAGE_LABEL: Record<Stage, string> = {
-  applied: "Applied", shortlisted: "Shortlisted", viewed: "Viewed", interviewed: "Interviewed", offered: "Offered",
+  scored: "Matched", applied: "Applied", pending_approval: "Awaiting approval", shortlisted: "Shortlisted", viewed: "Viewed", interviewed: "Interviewed", offered: "Offered",
   offer_accepted: "Offer accepted", hired: "Hired", rejected: "Not selected", withdrawn: "Withdrawn",
-  offer_reneged: "Offer reneged", did_not_join: "Did not join", role_closed: "Role closed",
+  offer_reneged: "Offer reneged", did_not_join: "Did not join", left_early: "Left early", declined_by_staff: "Declined", role_closed: "Role closed",
 };
-export const SETTLED: Stage[] = ["hired", "rejected", "withdrawn", "offer_reneged", "did_not_join", "role_closed"];
+export const SETTLED: Stage[] = ["hired", "rejected", "withdrawn", "offer_reneged", "did_not_join", "left_early", "declined_by_staff", "role_closed"];
 /** §4.3: the company's next forward step from each open stage. */
 export const NEXT_STAGE: Partial<Record<Stage, Stage>> = {
   shortlisted: "viewed", viewed: "interviewed", interviewed: "offered", offered: "offer_accepted", offer_accepted: "hired",
@@ -96,3 +97,10 @@ export const REJECTION_LABEL: Record<RejectionCategory, string> = {
 };
 /** §4.3: stages a candidate may withdraw from. From offer_accepted it becomes offer_reneged. */
 export const CAN_WITHDRAW: Stage[] = ["applied", "shortlisted", "viewed", "interviewed", "offered", "offer_accepted"];
+
+/** A date-only or ISO string as "6 Nov 2026". */
+export const dayOf = (iso: string, addDays = 0) => {
+  const d = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
+  d.setDate(d.getDate() + addDays);
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(d);
+};

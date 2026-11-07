@@ -23,7 +23,7 @@ describe("admin", () => {
   });
   it("staff lists the verification queue and approves via escape hatch, candidate is notified", async () => {
     const alum = await t.signIn("alum@gmail.com");
-    await t.as(alum.cookie)("/candidates", { method: "POST", body: JSON.stringify({ campusShortCode: "IITB", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } }) });
+    await t.as(alum.cookie)("/candidates", { method: "POST", body: JSON.stringify({ name: "Test Candidate", campusShortCode: "IITB", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } }) });
     const cookie = await staff();
     const list = await (await t.as(cookie)("/admin/reviews?kind=verification&escapeHatchDays=0")).json() as any;
     expect(list.items).toHaveLength(1);
@@ -49,7 +49,7 @@ describe("admin", () => {
     const created = await t.as(cookie)("/admin/associations", { method: "POST", body: JSON.stringify({ campusShortCode: "IITD", name: "IITDAA", payoutMode: "cash" }) });
     const { association } = await created.json() as any;
     const alum = await t.signIn("alum2@gmail.com");
-    await t.as(alum.cookie)("/candidates", { method: "POST", body: JSON.stringify({ campusShortCode: "IITD", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } }) });
+    await t.as(alum.cookie)("/candidates", { method: "POST", body: JSON.stringify({ name: "Test Candidate", campusShortCode: "IITD", gradDate: "2018-06-30", course: "B.Tech", claimed: { batch: "2018", branch: "EE", linkedinUrl: "" } }) });
     const queue = async () => (await (await t.as(cookie)("/admin/reviews?kind=verification")).json() as any).items;
     expect((await queue()).map((i: any) => i.associationId)).toEqual([association.id]);
     // once the association has an admin, its items wait for the escape hatch

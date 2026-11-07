@@ -47,8 +47,9 @@ Staff can also do this through `POST /admin/associations` with `adminEmails`.
 
 ## How the session works
 
-- The browser never calls the API. Route handlers under `src/app/api` forward to it and hold the
-  API session in an HTTP-only, SameSite=Lax cookie (`zh_session`); `zh_seat` holds the one role.
+- The browser never calls the API. Route handlers under `src/app/api` (including the seat proxy
+  `src/app/api/zh`) forward to it and hold the API session in an HTTP-only, SameSite=Lax cookie
+  (`zh_session`); `zh_seat` holds the one role.
 - `src/proxy.ts` turns away requests with no session cookie. Each seat layout then asks the API
   who the person is (`requireSeat`), so a stale or forged cookie gets nowhere.
 - The emailed link lands on a confirm page and is redeemed by a POST, so mail scanners that
@@ -59,18 +60,33 @@ Environment: `API_URL` (default `http://localhost:4000`), optional `COOKIE_SECUR
 
 ## What is live and what is sample data
 
-| Live, from the API | Sample data, API built but not connected here | Sample data, backend not built |
+| Live, from the API | Shown in the app, not backed by a ledger yet | Sample data, backend not built |
 |---|---|---|
-| Login, sessions, logout | Roles on the board | Deposits, invoices (Slice 2) |
-| Candidate sign-up, campus verification, profile, nudges switch | Applications, shortlists, company actions | Referral links, earnings ledger (Slice 2) |
-| Company creation and its verified domain | Fee terms | Association verification queue: staff can resolve items through `/admin/reviews`, but there are no association routes |
+| Login, sessions, logout | Deposits: Slice 1 has no payment, so staff waive every deposit (`POST /admin/roles/:id/waive-deposit`) and the app shows it as waived, never as held | Deposit collection, refunds, invoices and the ledger (Slice 2) |
+| Candidate sign-up (with name), campus verification, profile, nudges switch | The fee on a hire: the role page works it out from the accepted fee terms and the hired CTC; no invoice is raised | Association verification queue: staff can resolve items through `/admin/reviews`, but there are no association routes |
+| Company creation and its verified domain | | Referral links, earnings ledger (Slice 2) |
+| Roles: post, gate result, appeal, fee terms, accept, withdraw | | |
+| The board: roles open to a candidate, nudges, applying, withdrawing | | |
+| Applications and their stages, the "did you join?" answer | | |
+| Shortlists (rank, fit, cut line), every company stage action, hire, did not join, left early | | |
 | Association identity, share rate, payout mode | | |
 
-The rules behind the sample data are real: `src/lib/config.ts` reads the config defaults from
+Only the association seat still runs on sample data (`src/data/fixtures.ts`), and it carries a
+"Sample" tag. The rules behind it are real: `src/lib/config.ts` reads the config defaults from
 `packages/ops`, and `src/lib/rules.ts` implements deposit tiers, fee terms, the gate's rules pass
-and the stage table as the spec states them. Sample data lives in `src/data/fixtures.ts`. The
-company and association seats show a "Sample" tag while they depend on it; the candidate seat
-does not have one yet. The routes to connect are listed in `HANDOVER.md` at the repo root.
+and the stage table as the spec states them.
+
+How the live seats read and write:
+
+- Server components read with `readApi`/`readApiOrNull` (`src/lib/server-api.ts`), forwarding the
+  session cookie. The view shapes are typed in `src/lib/api-types.ts` and mirror
+  `services/api/src/routes/views.ts`.
+- Client components mutate through `zh()` (`src/lib/zh.ts`), which calls the same-origin proxy
+  `src/app/api/zh/[...path]`, then `router.refresh()`. The proxy only reaches the seat routes
+  (`/companies/:id/roles`, `/roles/*`, `/matches/*`, `/me/roles*`, `/me/applications*`); auth,
+  admin and webhooks are not reachable from the browser.
+- Staff steps with no screen yet (release terms, waive a deposit, extend or close a broadcast) go
+  through the API's `/admin/roles/:id/*` routes.
 
 ## Tests
 

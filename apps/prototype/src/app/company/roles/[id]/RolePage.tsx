@@ -1,83 +1,116 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Board, MiniBoard } from "@/components/Board";
 import { Countdown } from "@/components/Clock";
 import { Arrow } from "@/components/Icons";
 import { useRules } from "@/components/Rules";
-import { RoleTrack } from "@/components/Track";
-import { campus } from "@/data/campuses";
-import { BELOW_LINE } from "@/data/fixtures";
-import { ctcBand, describeTerms, formatPaise, lpa, NEXT_STAGE, REJECTION_CATEGORIES, REJECTION_LABEL, SETTLED, STAGE_LABEL, type RejectionCategory } from "@/lib/rules";
-import { feeBreakdown, useCompany, type MatchRow } from "@/seats/company";
 import { StageLamps } from "@/components/StageLamps";
+import { useNotify } from "@/components/Toasts";
+import { RoleTrack } from "@/components/Track";
+import type { CompanyRoleView, ShortlistRowView } from "@/lib/api-types";
+import { ctcBand, dayOf, formatPaise, lpa, NEXT_STAGE, REJECTION_CATEGORIES, REJECTION_LABEL, SETTLED, STAGE_LABEL, type RejectionCategory } from "@/lib/rules";
+import { zh } from "@/lib/zh";
+import { useCompany } from "@/seats/company";
 
-const fmtDate = (iso: string, addDays = 0) => {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + addDays);
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(d);
-};
 const lakhsToPaise = (v: string) => Math.round((Number(v) || 0) * 100_000 * 100);
+const describeTerms = (t: { kind: "flat" | "percent"; amount: number }) => t.kind === "flat" ? `${formatPaise(t.amount)} flat` : `${Math.round(t.amount * 100)}% of annual CTC`;
+const OPEN = ["draft", "gated", "terms_pending", "deposit_pending", "broadcast", "shortlist_ready"];
 
-export function RolePage({ id }: { id: string }) {
+export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null; shortlist: ShortlistRowView[] | null }) {
   const rules = useRules();
-  const { role, depositOf, acceptTerms, payDeposit, appeal, matches, hire, didNotJoin } = useCompany();
+  const router = useRouter();
+  const notify = useNotify();
+  const { codes, setTitle } = useCompany();
   const [openId, setOpenId] = useState<string | null>(null);
-  const r = role(id);
+  const [busy, setBusy] = useState(false);
+  const title = r?.title ?? null;
+  useEffect(() => { setTitle(title); return () => setTitle(null); }, [title, setTitle]);
 
   if (!r) {
     return (
       <div className="work wrap">
         <div className="work__main">
           <div className="empty">
-            <p style={{ marginBottom: "1rem" }}>This role is not in the session. Roles posted in the prototype are kept in memory and are gone after a reload.</p>
+            <p style={{ marginBottom: "1rem" }}>There is no role at this address, or it belongs to another company.</p>
             <Link href="/company" className="btn">Back to your roles</Link>
           </div>
         </div>
       </div>
     );
   }
-  const deposit = depositOf(r);
-  const hasShortlist = r.id === "founding-backend" && (r.status === "shortlist_ready" || r.status === "closing");
-  const fee = hire && r.id === "founding-backend" ? feeBreakdown(r, deposit, hire) : null;
-  const hired = hire ? matches.find((m) => m.id === hire.matchId) : undefined;
-  const depositState = r.status === "rejected" || r.status === "gated" || r.status === "terms_pending" ? "Not due yet"
-    : r.status === "deposit_pending" ? "Due now" : fee ? "Applied to the fee" : "Held";
+
+  const act = async (path: string, body?: unknown, done?: string) => {
+    if (busy) return;
+    setBusy(true);
+    try { await zh(path, { method: "POST", body }); if (done) notify(done); router.refresh(); }
+    catch (err) { notify((err as Error).message); }
+    finally { setBusy(false); }
+  };
+  const hired = r.hiredMatchId ? shortlist?.find((m) => m.id === r.hiredMatchId) ?? null : null;
+  // A waived deposit was never paid, so nothing is held and nothing comes off the fee (§9.1; Slice 1 waives every deposit).
+  const held = r.depositMode === "razorpay" ? r.depositAmount ?? 0 : 0;
+  const fee = hired && r.feeTerms && hired.hiredCtc ? (() => {
+    const total = r.feeTerms.kind === "flat" ? r.feeTerms.amount : Math.round(hired.hiredCtc! * r.feeTerms.amount);
+    const applied = Math.min(held, total);
+    return { total, applied, outstanding: total - applied, refund: held - applied };
+  })() : null;
+  const depositState = r.depositAmount === null ? (OPEN.includes(r.status) ? "Set when you accept the terms" : "None")
+    : r.status === "deposit_pending" ? "Due now" : r.depositMode === "waived" ? "Waived by Novare" : fee ? "Applied to the fee" : "Held";
+  const reach = codes(r.campusReach);
 
   return (
     <div className="work wrap">
       <div className="work__full">
-        <Link href="/company" className="small link">All roles</Link>
+        <div className="actions" style={{ justifyContent: "space-between" }}>
+          <Link href="/company" className="small link">All roles</Link>
+          {OPEN.includes(r.status) && (
+            <button type="button" className="btn btn--sm btn--stop" disabled={busy} onClick={() => { if (confirm("Withdraw this role? Candidates who applied are told, and the role cannot be reopened.")) act(`/roles/${r.id}/withdraw`, {}, "Role withdrawn."); }}>Withdraw the role</button>
+          )}
+        </div>
         <div style={{ marginTop: "1.25rem" }}><RoleTrack status={r.status} /></div>
       </div>
 
       <div className="work__main">
-        {!hasShortlist && <h2 className="vh">Where this role stands</h2>}
-        {r.status === "rejected" && (
-          <div className="note note--stop post">
-            <b>Not accepted at the gate. Rule: {r.gateRule}.</b>
-            <span>{r.gateNote} No candidate saw this role and nothing was charged.</span>
-            <div className="actions" style={{ marginTop: "0.9rem" }}>
-              <button type="button" className="btn btn--sm" onClick={() => appeal(r.id)}>Appeal to a person</button>
-              <span className="meta">One appeal, within {rules.appealWindowDays} days.</span>
-            </div>
+        {!shortlist && <h2 className="vh">Where this role stands</h2>}
+        {r.status === "draft" && (
+          <div className="note post">
+            <b>Still a draft.</b>Nothing happens until it goes to the gate.
+            <div className="actions" style={{ marginTop: "0.9rem" }}><button type="button" className="btn btn--ink btn--sm" disabled={busy} onClick={() => act(`/roles/${r.id}/submit`, undefined, "Submitted to the gate.")}>Submit to the gate</button></div>
           </div>
         )}
         {r.status === "gated" && (
-          <div className="note post"><b>With the Novare team.</b>{r.gateNote} You will get an email with the decision. An appeal that is turned down is final.</div>
+          <div className="note post"><b>With the Novare team.</b>{r.appealed ? "Your appeal is being reviewed by a person. " : r.gate?.reason ? `${r.gate.reason} ` : "The rules passed; a person is reviewing the role. "}You will get an email with the decision{r.appealed ? ", and an appeal that is turned down is final" : ""}.</div>
         )}
-        {r.status === "terms_pending" && r.terms && (
+        {r.status === "rejected" && (
+          <div className="note note--stop post">
+            <b>Not accepted at the gate{r.gate?.rule ? `. Rule: ${r.gate.rule}` : ""}.</b>
+            <span>{r.gate?.reason} No candidate saw this role and nothing was charged.</span>
+            {!r.appealed && (
+              <div className="actions" style={{ marginTop: "0.9rem" }}>
+                <button type="button" className="btn btn--sm" disabled={busy} onClick={() => act(`/roles/${r.id}/appeal`, {}, "Appeal sent to the Novare team.")}>Appeal to a person</button>
+                <span className="meta">One appeal, within {rules.appealWindowDays} days.</span>
+              </div>
+            )}
+          </div>
+        )}
+        {r.status === "terms_pending" && !r.feeTerms && (
+          <div className="note post"><b>Accepted at the gate.</b>Novare is preparing your fee terms. They are released within {48} hours, and you will get an email.</div>
+        )}
+        {r.status === "terms_pending" && r.feeTerms && (
           <div className="sheet post">
             <div className="sheet__head"><h3>Fee terms for this role</h3><span className="tag tag--lit">Released</span></div>
             <div className="sheet__pad" style={{ display: "grid", gap: "1.25rem" }}>
-              <p className="display t-l">{describeTerms(r.terms)}, only on a hire.</p>
+              <p className="display t-l">{describeTerms(r.feeTerms)}, only on a hire.</p>
               <dl className="kv">
-                <dt>Replacement guarantee</dt><dd>{r.terms.replacementGuaranteeDays} days from joining</dd>
+                <dt>Replacement guarantee</dt><dd>{r.feeTerms.replacement_guarantee_days} days from joining</dd>
                 <dt>Invoice falls due</dt><dd>{rules.dueDaysAfterJoin} days after the candidate joins</dd>
-                <dt>Deposit to go on the board</dt><dd className="num">{formatPaise(deposit)}, refundable</dd>
+                <dt>Campuses</dt><dd>{r.campusReach.length} of 23 <MiniBoard reach={reach} /></dd>
               </dl>
+              {r.feeTerms.notes && <p className="small">{r.feeTerms.notes}</p>}
               <div className="actions">
-                <button type="button" className="btn btn--ink" onClick={() => acceptTerms(r.id)}>Accept these terms<Arrow /></button>
+                <button type="button" className="btn btn--ink" disabled={busy} onClick={() => act(`/roles/${r.id}/terms/accept`, undefined, "Terms accepted. They cannot change from here.")}>Accept these terms<Arrow /></button>
                 <span className="meta">Terms cannot change once accepted. Unaccepted terms lapse after {rules.termsTimeoutDays} days.</span>
               </div>
             </div>
@@ -87,111 +120,107 @@ export function RolePage({ id }: { id: string }) {
           <div className="sheet post">
             <div className="sheet__head"><h3>Deposit</h3><span className="tag tag--lit">Due now</span></div>
             <div className="sheet__pad" style={{ display: "grid", gap: "1.25rem" }}>
-              <p className="display t-l num">{formatPaise(deposit)} for {r.reach.length} {r.reach.length === 1 ? "campus" : "campuses"}.</p>
-              <p className="small measure">The role goes on the board the moment the payment is captured, and stays open for {rules.broadcastDays} days. The deposit comes back if you work the shortlist and do not hire, and counts toward the fee if you do.</p>
-              <div className="actions">
-                <button type="button" className="btn btn--ink" onClick={() => payDeposit(r.id)}>Pay {formatPaise(deposit)}<Arrow /></button>
-                <span className="meta">Prototype: this simulates a captured Razorpay payment.</span>
-              </div>
+              <p className="display t-l num">{r.depositAmount !== null ? formatPaise(r.depositAmount) : ""} for {r.campusReach.length} {r.campusReach.length === 1 ? "campus" : "campuses"}.</p>
+              <p className="small measure">Novare collects the deposit and switches the role on; it then stays open for {rules.broadcastDays} days. The deposit comes back if you work the shortlist and do not hire, and counts toward the fee if you do.</p>
             </div>
           </div>
         )}
         {r.status === "broadcast" && (
           <div style={{ display: "grid", gap: "1.5rem" }}>
             <div className="note post">
-              <b><Countdown ms={r.closesInMs ?? 0} prefix="On the board. Closes in" /></b>
-              {r.applicants ?? 0} applicants so far. The shortlist stays hidden until the window closes, so the ranking cannot be second-guessed while it is still moving.
+              <b>{r.broadcastClosesAt ? <Countdown until={r.broadcastClosesAt} prefix="On the board. Closes in" done="The window has closed; the shortlist is being frozen." /> : "On the board."}</b>
+              {r.applicants} {r.applicants === 1 ? "applicant" : "applicants"} so far. The shortlist stays hidden until the window closes, so the ranking cannot be second-guessed while it is still moving.
             </div>
             <div className="post" style={{ "--i": 2 } as React.CSSProperties}>
-              <Board selected={new Set(r.reach)} compact label={`Campuses this role reaches: ${r.reach.length} of 23`} />
+              <Board selected={new Set(reach)} compact label={`Campuses this role reaches: ${reach.length} of 23`} />
             </div>
           </div>
         )}
-        {hasShortlist && (
+        {r.status === "withdrawn" && <div className="note post"><b>Withdrawn.</b>This role is closed for good. Post a new one if you still need to hire.</div>}
+        {shortlist && (
           <>
             <div className="work__lead">
               <h2 className="display t-m">The shortlist, ranked by fit</h2>
-              <p className="meta">Frozen when the window closed. Open a row to act on it.</p>
+              <p className="meta">{shortlist.length === 0 ? "Nobody applied before the window closed." : "Frozen when the window closed. Open a row to act on it."}</p>
             </div>
-            <div className="post" style={{ "--i": 2 } as React.CSSProperties}>
-              <table className="slist">
-                <caption className="vh">Shortlisted candidates in rank order</caption>
-                <thead><tr><th scope="col">Rank</th><th scope="col">Candidate</th><th scope="col" className="hide-s">Campus</th><th scope="col" className="hide-s">Stage</th><th scope="col" style={{ textAlign: "right" }}>Fit</th></tr></thead>
-                <tbody>
-                  {matches.map((m, i) => {
-                    const settled = SETTLED.includes(m.stage) && m.stage !== "hired";
-                    const tag = <span className={`tag${m.stage === "hired" ? " tag--lit" : settled ? " tag--quiet" : m.stage === "shortlisted" ? "" : " tag--ink"}`}>{m.stage === "shortlisted" ? "New" : STAGE_LABEL[m.stage]}</span>;
-                    return (
-                      <tr key={m.id} className={`srow${settled ? " is-settled" : ""}${m.stage === "hired" ? " is-hired" : ""}`}>
-                        <td className="c srow__rank num">{String(i + 1).padStart(2, "0")}</td>
-                        <td className="c">
-                          <button type="button" className="srow__name" onClick={() => setOpenId(m.id)} aria-haspopup="dialog">{m.name}</button>
-                          <span className="meta" style={{ display: "block" }}>{m.title}, {m.employer}</span>
-                          <span className="srow__stage-s">{tag}</span>
-                        </td>
-                        <td className="c hide-s"><span style={{ fontWeight: 600 }}>{campus(m.campus).name}</span><span className="meta" style={{ display: "block" }}>{m.gradYear}, {m.years} yrs</span></td>
-                        <td className="c hide-s">{tag}</td>
-                        <td className="c srow__fit num">{m.fit}</td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="cutline"><td colSpan={5}><div className="cutline__in"><span>The line. {rules.shortlistCap} above it.</span><span>{BELOW_LINE.count} more applied. The longlist is kept by Novare.</span></div></td></tr>
-                  <tr className="below" aria-hidden="true">
-                    <td className="c srow__rank num">26</td>
-                    <td className="c"><span className="redact" style={{ width: "9rem" }} /><span style={{ display: "block", marginTop: "0.4rem" }}><span className="redact" style={{ width: "14rem", maxWidth: "100%" }} /></span></td>
-                    <td className="c hide-s"><span className="redact" style={{ width: "6rem" }} /></td>
-                    <td className="c hide-s" />
-                    <td className="c srow__fit num">{BELOW_LINE.fit}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {shortlist.length > 0 && (
+              <div className="post" style={{ "--i": 2 } as React.CSSProperties}>
+                <table className="slist">
+                  <caption className="vh">Shortlisted candidates in rank order</caption>
+                  <thead><tr><th scope="col">Rank</th><th scope="col">Candidate</th><th scope="col" className="hide-s">Campus</th><th scope="col" className="hide-s">Stage</th><th scope="col" style={{ textAlign: "right" }}>Fit</th></tr></thead>
+                  <tbody>
+                    {shortlist.map((m, i) => {
+                      const settled = SETTLED.includes(m.stage) && m.stage !== "hired";
+                      const tag = <span className={`tag${m.stage === "hired" ? " tag--lit" : settled ? " tag--quiet" : m.stage === "shortlisted" ? "" : " tag--ink"}`}>{m.stage === "shortlisted" ? "New" : STAGE_LABEL[m.stage]}</span>;
+                      const name = m.candidate?.name || `Candidate ${String(i + 1).padStart(2, "0")}`;
+                      return (
+                        <tr key={m.id} className={`srow${settled ? " is-settled" : ""}${m.stage === "hired" ? " is-hired" : ""}`}>
+                          <td className="c srow__rank num">{String(m.rank ?? i + 1).padStart(2, "0")}</td>
+                          <td className="c">
+                            <button type="button" className="srow__name" onClick={() => setOpenId(m.id)} aria-haspopup="dialog">{name}</button>
+                            <span className="meta" style={{ display: "block" }}>{m.candidate ? m.candidate.profile.headline || [m.candidate.profile.currentTitle, m.candidate.profile.currentCompany].filter(Boolean).join(", ") || m.candidate.course : ""}</span>
+                            <span className="srow__stage-s">{tag}</span>
+                          </td>
+                          <td className="c hide-s"><span style={{ fontWeight: 600 }}>{m.candidate?.campus?.name ?? ""}</span><span className="meta" style={{ display: "block" }}>{m.candidate ? `${m.candidate.gradDate.slice(0, 4)}, ${m.candidate.profile.yearsExperience ?? 0} yrs` : ""}</span></td>
+                          <td className="c hide-s">{tag}</td>
+                          <td className="c srow__fit num">{m.fitScore}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="cutline"><td colSpan={5}><div className="cutline__in"><span>The line. Up to {r.shortlistCap} fit above it.</span><span>{Math.max(0, r.applicants - shortlist.length)} more applied. Novare keeps the longlist.</span></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </div>
 
       <aside className="work__side" aria-label="Role facts">
-        {fee && hire && hired && (
+        {fee && hired && (
           <div className="sheet post">
             <div className="sheet__head"><h3>Hire and fee</h3><span className="tag tag--lit">Hire recorded</span></div>
             <div className="sheet__pad">
-              <p style={{ fontWeight: 700 }}>{hired.name}</p>
-              <p className="meta" style={{ marginBottom: "1rem" }}>Joins {fmtDate(hire.joinedOn)} at {lpa(hire.hiredCtc)}</p>
+              <p style={{ fontWeight: 700 }}>{hired.candidate?.name || "Hired candidate"}</p>
+              <p className="meta" style={{ marginBottom: "1rem" }}>Joins {dayOf(hired.joinedOn!)} at {lpa(hired.hiredCtc!)}</p>
               <dl className="kv">
-                <dt>Fee, {r.terms ? describeTerms(r.terms) : ""}</dt><dd className="num">{formatPaise(fee.fee)}</dd>
-                <dt>Deposit applied</dt><dd className="num">minus {formatPaise(fee.applied)}</dd>
+                <dt>Fee, {describeTerms(r.feeTerms!)}</dt><dd className="num">{formatPaise(fee.total)}</dd>
+                {r.depositMode === "waived"
+                  ? <><dt>Deposit</dt><dd>Waived, so nothing to apply</dd></>
+                  : <><dt>Deposit applied</dt><dd className="num">minus {formatPaise(fee.applied)}</dd></>}
                 {fee.refund > 0 && <><dt>Deposit refunded</dt><dd className="num">{formatPaise(fee.refund)}</dd></>}
-                <div className="kv--total" style={{ display: "contents" }}><dt>To pay by {fmtDate(hire.joinedOn, rules.dueDaysAfterJoin)}</dt><dd className="num">{formatPaise(fee.outstanding)}</dd></div>
+                <div className="kv--total" style={{ display: "contents" }}><dt>To pay by {dayOf(hired.joinedOn!, rules.dueDaysAfterJoin)}</dt><dd className="num">{formatPaise(fee.outstanding)}</dd></div>
               </dl>
-              <p className="meta" style={{ margin: "1rem 0" }}>Replacement guarantee runs to {fmtDate(hire.joinedOn, r.terms?.replacementGuaranteeDays ?? rules.replacementDays)}. We ask {hired.name.split(" ")[0]} to confirm joining on the day.</p>
-              <button type="button" className="btn btn--sm btn--stop" onClick={didNotJoin}>Candidate did not join</button>
+              <p className="meta" style={{ margin: "1rem 0" }}>Replacement guarantee runs to {dayOf(hired.joinedOn!, r.feeTerms!.replacement_guarantee_days)}. {hired.joinConfirmedAt ? "Joining is confirmed." : "We ask the candidate to confirm joining on the day."}</p>
+              {!hired.joinConfirmedAt
+                ? <button type="button" className="btn btn--sm btn--stop" disabled={busy} onClick={() => act(`/matches/${hired.id}/actions`, { stage: "did_not_join" }, "Noted. The fee is voided and the shortlist is open again.")}>Candidate did not join</button>
+                : r.status === "closing" && <button type="button" className="btn btn--sm btn--stop" disabled={busy} onClick={() => { if (confirm("Record that the candidate left inside the guarantee? A replacement search starts at no extra fee.")) act(`/matches/${hired.id}/actions`, { stage: "left_early" }, "Replacement search started."); }}>Candidate left early</button>}
             </div>
           </div>
         )}
         <div className="sheet post" style={{ "--i": 3 } as React.CSSProperties}>
-          <div className="sheet__head"><h3>This role</h3><span className="meta">Posted {r.createdOn}</span></div>
+          <div className="sheet__head"><h3>This role</h3><span className="meta">Posted {dayOf(r.createdAt)}</span></div>
           <div className="sheet__pad">
             <dl className="kv">
-              <dt>For</dt><dd>{r.type === "intern" ? "Interns" : r.type === "fresher" ? "Freshers" : `${r.yearsExp[0]} to ${r.yearsExp[1]} years`}</dd>
+              <dt>For</dt><dd>{r.type === "intern" ? "Interns" : r.type === "fresher" ? "Freshers" : `${r.yearsExpMin} to ${r.yearsExpMax} years`}</dd>
               <dt>Pay</dt><dd>{ctcBand(r.type, r.ctcMin, r.ctcMax)}</dd>
-              <dt>Where</dt><dd>{r.locations.join(", ")}</dd>
-              <dt>Reach</dt><dd>{r.reach.length} of 23 <MiniBoard reach={r.reach} /></dd>
-              <dt>Deposit</dt><dd className="num">{formatPaise(deposit)}. {depositState}</dd>
-              {r.terms && <><dt>Fee on a hire</dt><dd>{describeTerms(r.terms)}</dd></>}
-              {r.status !== "rejected" && <><dt>Gate</dt><dd style={{ fontWeight: 400 }}>{r.gateNote}</dd></>}
+              <dt>Where</dt><dd>{r.locations.join(", ") || "Not set"}</dd>
+              <dt>Reach</dt><dd>{r.campusReach.length} of 23 <MiniBoard reach={reach} /></dd>
+              <dt>Deposit</dt><dd className="num">{r.depositAmount !== null ? `${formatPaise(r.depositAmount)}. ` : ""}{depositState}</dd>
+              {r.feeTerms && <><dt>Fee on a hire</dt><dd>{describeTerms(r.feeTerms)}</dd></>}
+              {r.gate && r.status !== "rejected" && <><dt>Gate</dt><dd style={{ fontWeight: 400 }}>{r.gate.outcome === "accept" ? `Accepted (${r.gate.stage === "human" ? "by a person" : "at the " + r.gate.stage + " pass"}).` : r.gate.reason}</dd></>}
             </dl>
           </div>
         </div>
       </aside>
 
-      <CandidatePanel match={matches.find((m) => m.id === openId) ?? null} onClose={() => setOpenId(null)} />
+      <CandidatePanel role={r} match={shortlist?.find((m) => m.id === openId) ?? null} onClose={() => setOpenId(null)} act={act} busy={busy} />
     </div>
   );
 }
 
-/** One shortlisted candidate. Actions follow the §4.3 transition table exactly. */
-function CandidatePanel({ match, onClose }: { match: MatchRow | null; onClose: () => void }) {
-  const { advance, reject, backedOut, markViewed, hire } = useCompany();
+/** One shortlisted candidate. Actions follow the §4.3 transition table; the API enforces it. */
+function CandidatePanel({ role, match, onClose, act, busy }: { role: CompanyRoleView; match: ShortlistRowView | null; onClose: () => void; act: (p: string, b?: unknown, d?: string) => Promise<void>; busy: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [offer, setOffer] = useState("");
   const [ctc, setCtc] = useState("");
@@ -202,7 +231,10 @@ function CandidatePanel({ match, onClose }: { match: MatchRow | null; onClose: (
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (id && !d.open) { d.showModal(); markViewed(id); setOffer(""); setCtc(""); setJoined(""); setCategory(""); }
+    if (id && !d.open) {
+      d.showModal(); setOffer(""); setCtc(""); setJoined(""); setCategory("");
+      if (match?.stage === "shortlisted" && !role.hiredMatchId) void act(`/matches/${id}/actions`, { stage: "viewed" }); // opening the profile is the "viewed" step
+    }
     if (!id && d.open) d.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -210,32 +242,34 @@ function CandidatePanel({ match, onClose }: { match: MatchRow | null; onClose: (
   const m = match;
   const next = m ? NEXT_STAGE[m.stage] : undefined;
   const settled = m ? SETTLED.includes(m.stage) : true;
-  const locked = !!hire && m?.stage !== "hired"; // one-hire rule
+  const locked = !!role.hiredMatchId && m?.stage !== "hired"; // one-hire rule
+  const p = m?.candidate?.profile;
   return (
     <dialog ref={ref} className="panel" aria-labelledby="panel-h" onClose={onClose} onClick={(e) => { if (e.target === ref.current) ref.current?.close(); }}>
       {m && (
         <>
           <div className="panel__head">
-            <span className="meta">Rank {String(Number(m.id.slice(1))).padStart(2, "0")} of 25</span>
+            <span className="meta">{m.rank ? `Rank ${String(m.rank).padStart(2, "0")} of ${role.shortlistCap}` : STAGE_LABEL[m.stage]}</span>
             <button type="button" className="btn btn--sm" onClick={() => ref.current?.close()}>Close</button>
           </div>
           <div className="panel__body">
             <div>
-              <h2 id="panel-h" className="display t-l">{m.name}</h2>
-              <p className="meta" style={{ marginTop: "0.5rem" }}>{m.title}, {m.employer}. {m.location}.</p>
+              <h2 id="panel-h" className="display t-l">{m.candidate?.name || "Candidate"}</h2>
+              <p className="meta" style={{ marginTop: "0.5rem" }}>{[p?.headline || [p?.currentTitle, p?.currentCompany].filter(Boolean).join(", "), p?.preferredLocations?.length ? `Wants ${p.preferredLocations.join(" or ")}` : ""].filter(Boolean).map((s) => s!.replace(/[.\s]+$/, "") + ".").join(" ")}</p>
             </div>
             <div className="panel__fit">
-              <b className="num">{m.fit}</b>
-              <p className="small"><span style={{ fontWeight: 700, display: "block" }}>Why this rank</span>{m.reason}</p>
+              <b className="num">{m.fitScore}</b>
+              <p className="small"><span style={{ fontWeight: 700, display: "block" }}>Why this rank</span>{m.fitReason || "Scored on skills, seniority, domain and location."}</p>
             </div>
             <dl className="kv">
-              <dt>Campus</dt><dd>{campus(m.campus).name}</dd>
-              <dt>Degree</dt><dd>{m.course}, {m.gradYear}</dd>
-              <dt>Experience</dt><dd>{m.years} years</dd>
-              <dt>Notice period</dt><dd>{m.noticeDays} days</dd>
+              <dt>Campus</dt><dd>{m.candidate?.campus?.name ?? ""}</dd>
+              <dt>Degree</dt><dd>{m.candidate?.course}, {m.candidate?.gradDate.slice(0, 4)}</dd>
+              <dt>Experience</dt><dd>{p?.yearsExperience ?? 0} years</dd>
+              <dt>Notice period</dt><dd>{p?.noticePeriodDays ?? 0} days</dd>
+              {p?.linkedinUrl ? <><dt>LinkedIn</dt><dd><a className="link" href={p.linkedinUrl} target="_blank" rel="noreferrer">Profile</a></dd></> : null}
               {m.offeredCtc ? <><dt>Offered</dt><dd>{lpa(m.offeredCtc)}</dd></> : null}
             </dl>
-            <div className="chips">{m.skills.map((s) => <span key={s} className="tag tag--quiet">{s}</span>)}</div>
+            {p?.skills.length ? <div className="chips">{p.skills.map((s) => <span key={s} className="tag tag--quiet">{s}</span>)}</div> : null}
             <div>
               <p className="small" style={{ fontWeight: 700, marginBottom: "0.5rem" }}>{STAGE_LABEL[m.stage]}{m.stage === "rejected" && m.rejectionCategory ? `: ${REJECTION_LABEL[m.rejectionCategory].toLowerCase()}` : ""}</p>
               {!settled || m.stage === "hired" ? <StageLamps stage={m.stage} /> : null}
@@ -244,22 +278,22 @@ function CandidatePanel({ match, onClose }: { match: MatchRow | null; onClose: (
             {locked && !settled && <p className="note">A hire is already recorded on this role. Other candidates can only be marked not selected.</p>}
 
             {!settled && !locked && next === "interviewed" && (
-              <button type="button" className="btn btn--ink" onClick={() => advance(m.id)}>Record an interview<Arrow /></button>
+              <button type="button" className="btn btn--ink" disabled={busy} onClick={() => act(`/matches/${m.id}/actions`, { stage: "interviewed" }, "Interview recorded. The candidate has been told.")}>Record an interview<Arrow /></button>
             )}
             {!settled && !locked && next === "offered" && (
-              <form className="field" onSubmit={(e) => { e.preventDefault(); advance(m.id, { offeredCtc: lakhsToPaise(offer) }); }}>
+              <form className="field" onSubmit={(e) => { e.preventDefault(); act(`/matches/${m.id}/actions`, { stage: "offered", offeredCtc: lakhsToPaise(offer) }, "Offer recorded. The candidate has been told."); }}>
                 <label htmlFor="offer">Offer, lakhs a year</label>
                 <div className="linkbox">
                   <input id="offer" className="input" style={{ border: 0 }} inputMode="decimal" required value={offer} onChange={(e) => setOffer(e.target.value.replace(/[^\d.]/g, ""))} />
-                  <button type="submit" className="btn btn--ink">Record the offer</button>
+                  <button type="submit" className="btn btn--ink" disabled={busy}>Record the offer</button>
                 </div>
               </form>
             )}
             {!settled && !locked && next === "offer_accepted" && (
-              <button type="button" className="btn btn--ink" onClick={() => advance(m.id)}>Mark the offer accepted<Arrow /></button>
+              <button type="button" className="btn btn--ink" disabled={busy} onClick={() => act(`/matches/${m.id}/actions`, { stage: "offer_accepted" }, "Offer marked accepted.")}>Mark the offer accepted<Arrow /></button>
             )}
             {!settled && !locked && next === "hired" && (
-              <form className="form" onSubmit={(e) => { e.preventDefault(); advance(m.id, { hiredCtc: lakhsToPaise(ctc), joinedOn: joined }); }}>
+              <form className="form" onSubmit={(e) => { e.preventDefault(); act(`/matches/${m.id}/actions`, { stage: "hired", hiredCtc: lakhsToPaise(ctc), joinedOn: joined }, "Hire recorded. We will confirm joining with the candidate."); }}>
                 <div className="form__pair">
                   <div className="field">
                     <label htmlFor="hctc">Final CTC, lakhs a year</label>
@@ -271,22 +305,22 @@ function CandidatePanel({ match, onClose }: { match: MatchRow | null; onClose: (
                   </div>
                 </div>
                 <div className="actions">
-                  <button type="submit" className="btn btn--ink">Record the hire<Arrow /></button>
-                  <button type="button" className="btn btn--sm" onClick={() => backedOut(m.id)}>Candidate backed out</button>
+                  <button type="submit" className="btn btn--ink" disabled={busy}>Record the hire<Arrow /></button>
+                  <button type="button" className="btn btn--sm" disabled={busy} onClick={() => act(`/matches/${m.id}/actions`, { stage: "offer_reneged" }, "Noted: the candidate backed out.")}>Candidate backed out</button>
                 </div>
                 <p className="meta">Recording a hire raises the fee and applies your deposit to it. One hire per role.</p>
               </form>
             )}
 
             {!settled && (
-              <form className="field" style={{ borderTop: "1px solid var(--rule)", paddingTop: "1.25rem" }} onSubmit={(e) => { e.preventDefault(); if (category) reject(m.id, category); }}>
+              <form className="field" style={{ borderTop: "1px solid var(--rule)", paddingTop: "1.25rem" }} onSubmit={(e) => { e.preventDefault(); if (category) act(`/matches/${m.id}/actions`, { stage: "rejected", rejectionCategory: category }, "Marked not selected. The candidate sees the category only."); }}>
                 <label htmlFor="why">Not selecting them</label>
                 <div className="linkbox">
                   <select id="why" className="select" style={{ border: 0 }} required value={category} onChange={(e) => setCategory(e.target.value as RejectionCategory)}>
                     <option value="">Choose a reason</option>
                     {REJECTION_CATEGORIES.map((c) => <option key={c} value={c}>{REJECTION_LABEL[c]}</option>)}
                   </select>
-                  <button type="submit" className="btn btn--stop">Mark not selected</button>
+                  <button type="submit" className="btn btn--stop" disabled={busy}>Mark not selected</button>
                 </div>
                 <span className="hint">The candidate sees the reason category and nothing else.</span>
               </form>

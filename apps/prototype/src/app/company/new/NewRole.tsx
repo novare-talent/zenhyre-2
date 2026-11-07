@@ -6,7 +6,10 @@ import { Arrow } from "@/components/Icons";
 import { useRules } from "@/components/Rules";
 import { CAMPUSES } from "@/data/campuses";
 import { defaultFeeTerms, depositFor, describeTerms, evaluateRules, formatPaise, lpa, tierIndexFor, type RoleType } from "@/lib/rules";
+import { zh } from "@/lib/zh";
+import { useNotify } from "@/components/Toasts";
 import { useCompany } from "@/seats/company";
+import type { CompanyRoleView } from "@/lib/api-types";
 
 const EXAMPLE = {
   title: "Platform engineer, bookings",
@@ -20,7 +23,9 @@ const toPaise = (type: RoleType, v: string) => { const n = Number(v) || 0; retur
 export function NewRole() {
   const rules = useRules();
   const router = useRouter();
-  const { submitRole } = useCompany();
+  const notify = useNotify();
+  const { me } = useCompany();
+  const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState("");
   const [type, setType] = useState<RoleType>("fresher");
   const [min, setMin] = useState("");
@@ -48,10 +53,24 @@ export function NewRole() {
 
   const fill = () => { setTitle(EXAMPLE.title); setType(EXAMPLE.type); setMin(EXAMPLE.min); setMax(EXAMPLE.max); setExpMin(EXAMPLE.expMin); setExpMax(EXAMPLE.expMax); setLocations(EXAMPLE.locations); setJd(EXAMPLE.jd); setReach(new Set(EXAMPLE.reach)); };
   const toggle = (code: string) => setReach((s) => { const n = new Set(s); if (n.has(code)) n.delete(code); else n.add(code); return n; });
-  const submit = (e: FormEvent) => {
+  // §3.3 submitRole: the role is created as a draft and submitted to the gate in one go. The gate, not this form, decides.
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const { id } = submitRole({ ...draft, yearsExp: [Number(expMin) || 0, Number(expMax) || 0] });
-    router.push(`/company/roles/${id}`);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { role } = await zh<{ role: CompanyRoleView }>(`/companies/${me.company.id}/roles`, { method: "POST", body: {
+        title: draft.title, type, jd: draft.jd, ctcMin: draft.ctcMin || null, ctcMax: draft.ctcMax || null,
+        yearsExpMin: type === "experienced" ? Number(expMin) || 0 : 0, yearsExpMax: type === "experienced" ? Number(expMax) || 0 : type === "fresher" ? 1 : 0,
+        locations: draft.locations, campusReach: draft.reach } });
+      const { role: submitted } = await zh<{ role: CompanyRoleView }>(`/roles/${role.id}/submit`, { method: "POST" });
+      notify(submitted.status === "rejected" ? `Not accepted at the gate: ${submitted.title}` : `Submitted: ${submitted.title}`);
+      router.push(`/company/roles/${submitted.id}`);
+      router.refresh(); // the seat's masthead and tab counts come from the layout, which a push alone does not re-fetch
+    } catch (err) {
+      notify((err as Error).message);
+      setBusy(false);
+    }
   };
 
   return (
@@ -151,7 +170,7 @@ export function NewRole() {
             <p className="meta" style={{ marginTop: "0.9rem" }}>Terms are confirmed by Novare after the gate and you accept them before paying anything.</p>
           </div>
         </div>
-        <button type="submit" className="btn btn--ink" style={{ minHeight: "3.25rem" }}>Submit to the gate<Arrow /></button>
+        <button type="submit" className="btn btn--ink" style={{ minHeight: "3.25rem" }} disabled={busy}>{busy ? "Submitting" : "Submit to the gate"}<Arrow /></button>
       </aside>
     </form>
   );

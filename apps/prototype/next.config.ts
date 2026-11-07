@@ -14,8 +14,9 @@ const config: NextConfig = {
     ];
     return [
       { source: "/:path*", headers: base },
-      // The sign-in token is in this URL: never send it anywhere as a referrer, never cache the page.
-      { source: "/auth/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
+      // The sign-in token is in this URL: never send it to another site as a referrer, never cache the page.
+      // (same-origin, not no-referrer: with no-referrer the browser sends "Origin: null" on the confirm form's POST.)
+      { source: "/auth/:path*", headers: [{ key: "Referrer-Policy", value: "same-origin" }, { key: "Cache-Control", value: "no-store" }] },
     ];
   },
 };

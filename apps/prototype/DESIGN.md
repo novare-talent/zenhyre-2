@@ -2,7 +2,8 @@
 
 Clickable front-end prototypes for the three stakeholders in the spec
 (`docs/superpowers/specs/2026-11-05-zenhyre-2-design.md`): candidates, companies, alumni
-associations. One Next.js app, one seat per stakeholder, fixture data, real rules.
+associations. One Next.js app, one seat per stakeholder, real rules. The candidate and company
+seats run on live API data; the association seat still runs on fixture data.
 
 ## Brief
 
@@ -15,8 +16,10 @@ associations. One Next.js app, one seat per stakeholder, fixture data, real rule
   GSAP for the board and the seat transition. No Lenis: these are app screens, native scroll
   is the right feel. No WebGL, no loader: a product earns craft, not theatre.
 - **Assumptions:** every person, company and amount in `src/data/fixtures.ts` is invented.
-  The API today covers identity only (Slice 1A), so roles, matching and ledger are simulated
-  in the browser with the spec's rules. State resets on reload.
+  Identity, roles, matching, applications and shortlists come from the API (Slice 1). The
+  association queue, referrals and earnings have no API yet, so that seat alone shows fixture
+  data and carries a "Sample" tag. Deposits are waived in Slice 1 and there is no ledger, so the
+  fee sheet on a hire is worked out from the accepted terms.
 
 ## Concepts considered
 

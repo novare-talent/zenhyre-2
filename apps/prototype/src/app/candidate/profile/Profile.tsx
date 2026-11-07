@@ -11,6 +11,7 @@ const STATE = { verified: "Verified", referral_pending: "Waiting", verification_
 
 export function Profile() {
   const { me, verificationState, profile, saveProfile, open, setOpen } = useCandidate();
+  const [name, setName] = useState(profile.name);
   const [headline, setHeadline] = useState(profile.headline);
   const [skills, setSkills] = useState(profile.skills.join(", "));
   const [roles, setRoles] = useState(profile.preferredRoles.join(", "));
@@ -24,7 +25,7 @@ export function Profile() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    await saveProfile({ headline: headline.trim(), skills: list(skills), preferredRoles: list(roles), preferredLocations: list(locations),
+    await saveProfile({ name: name.trim(), headline: headline.trim(), skills: list(skills), preferredRoles: list(roles), preferredLocations: list(locations),
       yearsExperience: Number(years) || 0, noticePeriodDays: Math.round(Number(notice) || 0), linkedin: linkedin.trim() });
     setBusy(false);
   };
@@ -37,6 +38,11 @@ export function Profile() {
           <p className="meta">Shown only to companies whose shortlist you are on.</p>
         </div>
         <form className="form sheet sheet__pad post" style={{ "--i": 2 } as React.CSSProperties} onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="name">Full name</label>
+            <input id="name" className="input" required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={120} />
+            <span className="hint">Shown to companies whose shortlist you are on, and to your association.</span>
+          </div>
           <div className="field">
             <label htmlFor="headline">Headline</label>
             <input id="headline" className="input" value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="One line on what you do best" maxLength={140} />
