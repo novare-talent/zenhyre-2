@@ -59,17 +59,18 @@ Environment: `API_URL` (default `http://localhost:4000`), optional `COOKIE_SECUR
 
 ## What is live and what is sample data
 
-| Live, from the API | Sample data, until the backend slice lands |
-|---|---|
-| Login, sessions, logout | Roles on the board, the gate's model pass (Slice 1B) |
-| Candidate sign-up, campus verification, profile, nudges switch | Applications, shortlists, company actions (Slice 1B) |
-| Company creation and its verified domain | Deposits, fees, invoices (Slice 2) |
-| Association identity, share rate, payout mode | Verification queue, referral links, earnings ledger (Slices 1B and 2) |
+| Live, from the API | Sample data, API built but not connected here | Sample data, backend not built |
+|---|---|---|
+| Login, sessions, logout | Roles on the board | Deposits, invoices (Slice 2) |
+| Candidate sign-up, campus verification, profile, nudges switch | Applications, shortlists, company actions | Referral links, earnings ledger (Slice 2) |
+| Company creation and its verified domain | Fee terms | Association verification queue: staff can resolve items through `/admin/reviews`, but there are no association routes |
+| Association identity, share rate, payout mode | | |
 
 The rules behind the sample data are real: `src/lib/config.ts` reads the config defaults from
 `packages/ops`, and `src/lib/rules.ts` implements deposit tiers, fee terms, the gate's rules pass
-and the stage table as the spec states them. Sample data lives in `src/data/fixtures.ts`; each
-seat shows a "Sample" tag while it depends on it.
+and the stage table as the spec states them. Sample data lives in `src/data/fixtures.ts`. The
+company and association seats show a "Sample" tag while they depend on it; the candidate seat
+does not have one yet. The routes to connect are listed in `HANDOVER.md` at the repo root.
 
 ## Tests
 
