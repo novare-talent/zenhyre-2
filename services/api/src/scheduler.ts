@@ -16,6 +16,7 @@ export const CADENCE: Record<ScheduledJobName, "hourly" | "nightly"> = {
   "role.join_grace": "nightly",
   "role.guarantee_expiry": "nightly",
   "candidate.status_flip": "nightly",
+  "candidate.grad_nudge": "nightly",
 };
 
 const HOUR_MS = 60 * 60 * 1000;

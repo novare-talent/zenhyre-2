@@ -1,4 +1,4 @@
-import { uuid, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { z2 } from "./_schema";
 export const notifyChannel = z2.enum("notify_channel", ["email", "in_app"]);
 export const notification = z2.table("notification", {
@@ -11,4 +11,4 @@ export const notification = z2.table("notification", {
   readAt: timestamp("read_at", { withTimezone: true }),
   bounceReason: text("bounce_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("notification_user_idx").on(t.userId, t.channel, t.createdAt)]);

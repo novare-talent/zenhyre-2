@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "notification_user_idx" ON "zenhyre2"."notification" USING btree ("user_id","channel","created_at");
