@@ -5,7 +5,19 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run" },
-  "dependencies": { "@zenhyre/db": "workspace:*", "@zenhyre/shared": "workspace:*", "drizzle-orm": "^0.36.0", "resend": "^4.0.0" },
-  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0" }
+  "scripts": {
+    "build": "node init && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zenhyre/db": "workspace:*",
+    "@zenhyre/shared": "workspace:*",
+    "drizzle-orm": "^0.36.0",
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
 }

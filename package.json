@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "build": "turbo run build",
+    "build": "node init && turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "test:pkg": "turbo run test --filter",
@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "node-fetch": "^3.3.2",
     "turbo": "^2.3.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17  # matches Supabase
         env:
           POSTGRES_USER: zenhyre
           POSTGRES_PASSWORD: zenhyre
