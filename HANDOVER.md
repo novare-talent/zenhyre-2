@@ -14,8 +14,8 @@ The Slice 1 backend is mostly built and tested. The web app is not connected to 
 | Roles, gate, fee terms, matching, shortlist, hire and join workflows | Built and tested in the API; the web app does not call them |
 | Scheduled jobs | Built, on an interim in-process timer |
 | Candidate and company pages for roles, applications and shortlists | Show sample data from `apps/prototype/src/data/fixtures.ts` |
-| Staff console (§12) | Not built; staff use the `/admin/*` API |
-| Association portal | Login only; the rest shows sample data, and the API has no association routes |
+| Staff console (§12) | `/staff` in the web app: gate, verification, join-dispute and alert queues; roles with fee terms, release, waiver, extend/close broadcast, longlist and history; config editor |
+| Association portal | Verification queue is live (`/association`); referrals and earnings show sample data until Slice 2 |
 | Money (Slice 2), trust (Slice 3), migration from 1.0 (§15) | Not started |
 
 At this commit, a fresh clone installs from the lockfile, builds, and passes all 1,637 tests against Postgres 16.
@@ -242,7 +242,7 @@ The nightly order matters: prompt, then grace, then guarantee expiry. `JOB_RUNNE
 ### Slice 1 work still open
 
 1. **Connect the seat pages to the API.** Roles, applications and shortlists read fixtures. The candidate seat shows this sample data with no "Sample" tag, unlike the company and association seats.
-2. **Staff console** (§12): gate, verification, join-dispute and alert queues, role transitions, fee terms, config. Today this is API only, and production depends on it because every role waits for staff.
+2. ~~Staff console~~: done at `/staff` (staff land there after sign-in). Still missing from §12: companies/candidates with trust scores (Slice 3), associations with balances and the ledger (Slice 2), month-end CSV export, company merge UI (API exists).
 3. ~~Association routes~~: done, `GET /association/reviews`, `POST /association/reviews/:id/resolve`.
 4. ~~In-app notifications~~: done, `GET /me/notifications`, `POST /me/notifications/read`.
 5. ~~`candidate.grad_nudge` job~~: done (once per offset, 7-day catch-up window).

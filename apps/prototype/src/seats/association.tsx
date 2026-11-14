@@ -5,7 +5,8 @@ import { Tabs } from "@/components/Bar";
 import { CampusCell, Mast } from "@/components/Mast";
 import { useNotify } from "@/components/Toasts";
 import { campus } from "@/data/campuses";
-import { SHARE_LEDGER, VERIFICATION_QUEUE, type ShareEntry, type VerificationItem } from "@/data/fixtures";
+import { SHARE_LEDGER, type ShareEntry, type VerificationItem } from "@/data/fixtures";
+export type { VerificationItem };
 import { percentOf, type Paise } from "@/lib/rules";
 
 export type Resolution = "approve" | "reject" | "reject_fraud";
@@ -36,10 +37,10 @@ export function balances(rate: number) {
 
 const TITLES: Record<string, string> = { "/association": "Alumni to verify", "/association/referrals": "Links to share", "/association/earnings": "What you have earned" };
 
-export function AssociationSeat({ identity, children }: { identity: AssociationIdentity; children: ReactNode }) {
+export function AssociationSeat({ identity, initialQueue, children }: { identity: AssociationIdentity; initialQueue: VerificationItem[]; children: ReactNode }) {
   const notify = useNotify();
   const path = usePathname();
-  const [queue, setQueue] = useState(VERIFICATION_QUEUE);
+  const [queue, setQueue] = useState(initialQueue);
   const [resolved, setResolved] = useState<Resolved[]>([]);
   const [tips, setTips] = useState(0);
 
@@ -48,9 +49,25 @@ export function AssociationSeat({ identity, children }: { identity: AssociationI
     resolve(id, resolution, reason) {
       const item = queue.find((q) => q.id === id);
       if (!item) return;
+      // Optimistic: the row leaves the queue at once and comes back if the API refuses.
       setQueue((xs) => xs.filter((q) => q.id !== id));
       setResolved((xs) => [{ item, resolution, reason }, ...xs]);
-      notify(resolution === "approve" ? `${item.name} is verified and can now be shortlisted.` : `${item.name} was not verified. They have been told why.`);
+      void fetch(`/api/zh/association/reviews/${encodeURIComponent(id)}/resolve`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resolution, note: reason }),
+      }).then(async (r) => {
+        if (r.ok) {
+          notify(resolution === "approve" ? `${item.name} is verified and can now be shortlisted.` : `${item.name} was not verified. They have been told why.`);
+          return;
+        }
+        const j = (await r.json().catch(() => ({}))) as { message?: string };
+        setQueue((xs) => [item, ...xs]);
+        setResolved((xs) => xs.filter((x) => x.item.id !== id));
+        notify(j.message ?? "That did not go through. Try again.");
+      }).catch(() => {
+        setQueue((xs) => [item, ...xs]);
+        setResolved((xs) => xs.filter((x) => x.item.id !== id));
+        notify("The server did not answer. Try again in a minute.");
+      });
     },
     sendTip() { setTips((n) => n + 1); notify("Sent to the Novare team. Nothing changes until they confirm it."); },
   }), [identity, queue, resolved, tips, notify]);
@@ -65,7 +82,7 @@ export function AssociationSeat({ identity, children }: { identity: AssociationI
           sub={<>{identity.name}. You are an admin.</>}
           facts={<>
             <span className="tag">{Math.round(identity.shareRate * 100)}% of fees collected</span>
-            <span className="tag tag--quiet">Sample queue and figures until referrals go live</span>
+            {path !== "/association" && <span className="tag tag--quiet">Sample figures until referrals go live</span>}
           </>}
         />
         <Tabs label="Association" items={[

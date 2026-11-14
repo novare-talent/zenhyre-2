@@ -12,6 +12,7 @@ export default async function Page() {
   if (!s) redirect("/login");
   const held = heldSeats(s.me);
   if (held.length) redirect(s.seat && held.includes(s.seat) ? `/${s.seat}` : "/auth/expired");
+  if (s.me.user.isStaff) redirect("/staff"); // Novare staff hold no seat; their home is the console (§12)
   const locked = !!s.me.membership?.lockedAt;
   const seat = s.seat === "candidate" || s.seat === "company" ? s.seat : null;
   const campus = campusForEmail(s.email);
