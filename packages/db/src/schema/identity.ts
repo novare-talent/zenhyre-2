@@ -1,14 +1,15 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, date, jsonb, numeric, primaryKey, pgEnum } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, boolean, integer, date, jsonb, numeric, primaryKey, index } from "drizzle-orm/pg-core";
+import { z2 } from "./_schema";
 
-export const candidateStatus = pgEnum("candidate_status", ["student", "final_year", "alumnus"]);
-export const verificationState = pgEnum("verification_state", ["verified", "referral_pending", "verification_pending", "rejected"]);
-export const verificationSource = pgEnum("verification_source", ["campus_email", "referral", "association", "staff"]);
-export const trustStatus = pgEnum("trust_status", ["ok", "restricted", "blocked"]);
-export const companyStatus = pgEnum("company_status", ["active", "probation", "banned"]);
-export const companyUserRole = pgEnum("company_user_role", ["owner", "member"]);
-export const payoutMode = pgEnum("payout_mode", ["cash", "sponsorship_credit"]);
+export const candidateStatus = z2.enum("candidate_status", ["student", "final_year", "alumnus"]);
+export const verificationState = z2.enum("verification_state", ["verified", "referral_pending", "verification_pending", "rejected"]);
+export const verificationSource = z2.enum("verification_source", ["campus_email", "referral", "association", "staff"]);
+export const trustStatus = z2.enum("trust_status", ["ok", "restricted", "blocked"]);
+export const companyStatus = z2.enum("company_status", ["active", "probation", "banned"]);
+export const companyUserRole = z2.enum("company_user_role", ["owner", "member"]);
+export const payoutMode = z2.enum("payout_mode", ["cash", "sponsorship_credit"]);
 
-export const campus = pgTable("campus", {
+export const campus = z2.table("campus", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   shortCode: text("short_code").notNull().unique(),
@@ -17,13 +18,14 @@ export const campus = pgTable("campus", {
   internalTier: integer("internal_tier").notNull().default(3),
 });
 
-export const user = pgTable("user", {
-  id: uuid("id").primaryKey().defaultRandom(),
+export const user = z2.table("user", {
+  /** Same value as auth.users.id in Supabase. */
+  id: uuid("id").primaryKey(),
   isStaff: boolean("is_staff").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const userEmail = pgTable("user_email", {
+export const userEmail = z2.table("user_email", {
   userId: uuid("user_id").notNull().references(() => user.id),
   email: text("email").primaryKey(),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
@@ -32,23 +34,22 @@ export const userEmail = pgTable("user_email", {
   bounceCount: integer("bounce_count").notNull().default(0),
 });
 
-export const magicLinkToken = pgTable("magic_link_token", {
-  token: text("token").primaryKey(),
+/**
+ * A pending invitation to join a company or an association. Sign-in itself is Supabase Auth;
+ * an invite is accepted the first time a user signs in with the invited address (see identity.acceptPendingInvites).
+ */
+export const invite = z2.table("invite", {
+  id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull(),
-  purpose: text("purpose").notNull(), // "signin" | "company_invite" | "association_admin_invite"
+  purpose: text("purpose").notNull(), // "company_invite" | "association_admin_invite"
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  invitedBy: uuid("invited_by"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  usedAt: timestamp("used_at", { withTimezone: true }),
-});
-
-export const session = pgTable("session", {
-  id: text("id").primaryKey(),
-  userId: uuid("user_id").notNull().references(() => user.id),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("invite_email_idx").on(t.email)]);
 
-export const candidate = pgTable("candidate", {
+export const candidate = z2.table("candidate", {
   userId: uuid("user_id").primaryKey().references(() => user.id),
   campusId: uuid("campus_id").notNull().references(() => campus.id),
   gradDate: date("grad_date").notNull(),
@@ -87,7 +88,7 @@ export interface CandidateProfile {
   claimed?: { batch: string; branch: string; linkedinUrl: string };
 }
 
-export const company = pgTable("company", {
+export const company = z2.table("company", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   verifiedDomain: text("verified_domain").notNull(),
@@ -96,7 +97,7 @@ export const company = pgTable("company", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const companyUser = pgTable("company_user", {
+export const companyUser = z2.table("company_user", {
   userId: uuid("user_id").notNull().references(() => user.id),
   companyId: uuid("company_id").notNull().references(() => company.id),
   role: companyUserRole("role").notNull(),
@@ -105,7 +106,7 @@ export const companyUser = pgTable("company_user", {
   lockedAt: timestamp("locked_at", { withTimezone: true }),
 }, (t) => [primaryKey({ columns: [t.userId, t.companyId] })]);
 
-export const association = pgTable("association", {
+export const association = z2.table("association", {
   id: uuid("id").primaryKey().defaultRandom(),
   campusId: uuid("campus_id").notNull().references(() => campus.id).unique(),
   name: text("name").notNull(),
@@ -115,7 +116,7 @@ export const association = pgTable("association", {
   mouSignedAt: timestamp("mou_signed_at", { withTimezone: true }),
 });
 
-export const associationAdmin = pgTable("association_admin", {
+export const associationAdmin = z2.table("association_admin", {
   userId: uuid("user_id").notNull().references(() => user.id),
   associationId: uuid("association_id").notNull().references(() => association.id),
   invitedBy: uuid("invited_by"),

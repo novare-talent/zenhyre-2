@@ -1,16 +1,17 @@
-import { pgTable, uuid, text, timestamp, integer, bigint, bigserial, boolean, date, jsonb, pgEnum, unique, index } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, integer, bigint, bigserial, boolean, date, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { z2 } from "./_schema";
 import { candidate } from "./identity";
 import { role } from "./roles";
 
 /** §4.3. Settled: hired, did_not_join, left_early, rejected, declined_by_staff, withdrawn, offer_reneged, role_closed. All others are open. */
-export const matchStage = pgEnum("match_stage", [
+export const matchStage = z2.enum("match_stage", [
   "scored", "applied", "pending_approval", "shortlisted", "viewed", "interviewed", "offered", "offer_accepted", "hired",
   "offer_reneged", "rejected", "withdrawn", "did_not_join", "left_early", "declined_by_staff", "role_closed"]);
-export const rejectionCategory = pgEnum("rejection_category", [
+export const rejectionCategory = z2.enum("rejection_category", [
   "skills", "experience", "location", "compensation", "culture", "position_filled", "no_show", "other"]);
-export const joinConfirmedBy = pgEnum("join_confirmed_by", ["candidate", "grace", "staff"]);
+export const joinConfirmedBy = z2.enum("join_confirmed_by", ["candidate", "grace", "staff"]);
 
-export const match = pgTable("match", {
+export const match = z2.table("match", {
   id: uuid("id").primaryKey().defaultRandom(),
   roleId: uuid("role_id").notNull().references(() => role.id),
   candidateId: uuid("candidate_id").notNull().references(() => candidate.userId),
@@ -39,7 +40,7 @@ export const match = pgTable("match", {
 ]);
 
 /** Append-only. `from_stage` is null for the event that records the match being scored. */
-export const matchEvent = pgTable("match_event", {
+export const matchEvent = z2.table("match_event", {
   id: uuid("id").primaryKey().defaultRandom(),
   /** Insertion order: applying and being shortlisted happen in the same instant. */
   seq: bigserial("seq", { mode: "number" }).notNull(),

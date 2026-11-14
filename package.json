@@ -19,5 +19,12 @@
     "vitest": "^2.1.0",
     "@types/node": "^22.0.0"
   },
-  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }

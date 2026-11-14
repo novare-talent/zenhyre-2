@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { createDb, Db } from "../index";
+import { createDb, Db, DB_SCHEMA } from "../index";
 
 const DEFAULT_URL = "postgres://zenhyre:zenhyre@localhost:5433/zenhyre";
 
@@ -17,7 +17,7 @@ export async function testDb(): Promise<{ db: Db; close: () => Promise<void> }> 
   const url = new URL(baseUrl);
   url.pathname = `/${name}`;
   const { db, close } = createDb(url.toString());
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)) });
+  await migrate(db, { migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)), migrationsSchema: DB_SCHEMA });
   return {
     db,
     close: async () => {

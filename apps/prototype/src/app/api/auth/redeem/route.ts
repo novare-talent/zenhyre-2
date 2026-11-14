@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { decideSeat } from "@/lib/seat-decision";
-import { apiFetch, clearAuthCookies, COOKIE, heldSeats, here, isSeat, loadMe, sameOrigin, setAuthCookie, type Seat } from "@/lib/session";
+import { apiFetch, clearAuthCookies, COOKIE, heldSeats, here, isSeat, loadMe, sameOrigin, setAuthCookie, setSessionCookies, type ApiSession, type Seat } from "@/lib/session";
 
 /**
  * Step 2 of login: redeem the single-use link, then seat the session in exactly one role.
@@ -14,10 +14,11 @@ export async function POST(req: NextRequest) {
   if (!token) return go("/login?error=link");
 
   let redeemed: Response;
-  try { redeemed = await apiFetch(`/auth/redeem?t=${encodeURIComponent(token)}`); } catch { return go("/login?error=down"); }
-  if (!redeemed.ok) return go("/login?error=link");
-  const { purpose } = (await redeemed.json()) as { purpose: string };
-  const sid = redeemed.headers.getSetCookie().map((c) => c.match(/^zh_session=([^;]+)/)?.[1]).find(Boolean);
+  try { redeemed = await apiFetch("/auth/redeem", { method: "POST", body: JSON.stringify({ t: token }) }); } catch { return go("/login?error=down"); }
+  if (redeemed.status === 400) return go("/login?error=link");
+  if (!redeemed.ok) return go("/login?error=down");
+  const { purpose, session } = (await redeemed.json()) as { purpose: string; session: ApiSession };
+  const sid = session?.accessToken;
   if (!sid) return go("/login?error=link");
   const loaded = await loadMe(sid);
   if (loaded.status !== "ok") return go("/login?error=down");
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
   const dest = decision.kind === "setup" ? "/welcome" : `/${decision.seat}${decision.notice ? "?notice=role" : ""}`;
 
   const res = go(dest);
-  setAuthCookie(res, req, COOKIE.session, sid);
+  setSessionCookies(res, req, session);
   if (seat) setAuthCookie(res, req, COOKIE.seat, seat);
   res.cookies.set(COOKIE.intent, "", { path: "/", maxAge: 0 });
   return res;

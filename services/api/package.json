@@ -12,19 +12,25 @@
     "issue:association": "tsx src/scripts/issueAssociationAccess.ts"
   },
   "dependencies": {
-    "hono": "^4.6.0",
     "@hono/node-server": "^1.13.0",
-    "zod": "^3.23.0",
-    "drizzle-orm": "^0.36.0",
-    "svix": "^1.40.0",
+    "@supabase/supabase-js": "2.55.0",
     "@zenhyre/db": "workspace:*",
-    "@zenhyre/shared": "workspace:*",
-    "@zenhyre/ops": "workspace:*",
-    "@zenhyre/identity": "workspace:*",
     "@zenhyre/gate": "workspace:*",
-    "@zenhyre/roles": "workspace:*",
+    "@zenhyre/identity": "workspace:*",
     "@zenhyre/matching": "workspace:*",
-    "@zenhyre/notify": "workspace:*"
+    "@zenhyre/notify": "workspace:*",
+    "@zenhyre/ops": "workspace:*",
+    "@zenhyre/roles": "workspace:*",
+    "@zenhyre/shared": "workspace:*",
+    "drizzle-orm": "^0.36.0",
+    "hono": "^4.6.0",
+    "jose": "5.9.6",
+    "svix": "^1.40.0",
+    "zod": "^3.23.0"
   },
-  "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
 }

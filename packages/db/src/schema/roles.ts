@@ -1,13 +1,14 @@
-import { pgTable, uuid, text, timestamp, integer, bigint, bigserial, jsonb, real, pgEnum, index } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, integer, bigint, bigserial, jsonb, real, index } from "drizzle-orm/pg-core";
+import { z2 } from "./_schema";
 import { company } from "./identity";
 
-export const roleType = pgEnum("role_type", ["intern", "fresher", "experienced"]);
+export const roleType = z2.enum("role_type", ["intern", "fresher", "experienced"]);
 /** §5. Open: draft, gated, terms_pending, deposit_pending, broadcast, shortlist_ready. Terminal: closed, withdrawn, rejected. */
-export const roleStatus = pgEnum("role_status", [
+export const roleStatus = z2.enum("role_status", [
   "draft", "gated", "rejected", "terms_pending", "deposit_pending", "broadcast", "shortlist_ready", "closing", "closed", "withdrawn"]);
-export const depositMode = pgEnum("deposit_mode", ["razorpay", "waived"]);
-export const gateStage = pgEnum("gate_stage", ["rules", "model", "human"]);
-export const gateOutcome = pgEnum("gate_outcome", ["accept", "reject", "needs_review"]);
+export const depositMode = z2.enum("deposit_mode", ["razorpay", "waived"]);
+export const gateStage = z2.enum("gate_stage", ["rules", "model", "human"]);
+export const gateOutcome = z2.enum("gate_outcome", ["accept", "reject", "needs_review"]);
 
 /** §4.2. `amount` is paise for `flat` and a fraction (0.10 = 10%) for `percent`. */
 export interface FeeTerms {
@@ -22,7 +23,7 @@ export interface FeeTerms {
  * `embedding vector(1536)` arrives with pgvector; Slice 1 scores through `matching`'s Scorer interface instead.
  * `final_gate_decision_id` and `hired_match_id` carry no FK: the first would be circular, the second points into `matching`'s table.
  */
-export const role = pgTable("role", {
+export const role = z2.table("role", {
   id: uuid("id").primaryKey().defaultRandom(),
   companyId: uuid("company_id").notNull().references(() => company.id),
   title: text("title").notNull(),
@@ -62,7 +63,7 @@ export const role = pgTable("role", {
 ]);
 
 /** Append-only. `from_status` is null for the creation event (and for replacement roles created directly in `broadcast`). */
-export const roleEvent = pgTable("role_event", {
+export const roleEvent = z2.table("role_event", {
   id: uuid("id").primaryKey().defaultRandom(),
   /** Insertion order. `at` alone cannot order two events written in the same millisecond. */
   seq: bigserial("seq", { mode: "number" }).notNull(),
@@ -75,7 +76,7 @@ export const roleEvent = pgTable("role_event", {
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("role_event_role_idx").on(t.roleId, t.seq)]);
 
-export const roleGateDecision = pgTable("role_gate_decision", {
+export const roleGateDecision = z2.table("role_gate_decision", {
   id: uuid("id").primaryKey().defaultRandom(),
   roleId: uuid("role_id").notNull().references(() => role.id),
   stage: gateStage("stage").notNull(),

@@ -1,6 +1,7 @@
-import { pgTable, uuid, text, timestamp, jsonb, pgEnum } from "drizzle-orm/pg-core";
-export const notifyChannel = pgEnum("notify_channel", ["email", "in_app"]);
-export const notification = pgTable("notification", {
+import { uuid, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { z2 } from "./_schema";
+export const notifyChannel = z2.enum("notify_channel", ["email", "in_app"]);
+export const notification = z2.table("notification", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(),
   template: text("template").notNull(),

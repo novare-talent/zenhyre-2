@@ -10,7 +10,7 @@ The Slice 1 backend is mostly built and tested. The web app is not connected to 
 
 | Area | State |
 |---|---|
-| Login, sessions, one-role rule, candidate and company sign-up | Built, and used by the web app |
+| Login (Supabase Auth, see `docs/supabase.md`), one-role rule, candidate and company sign-up | Built, and used by the web app |
 | Roles, gate, fee terms, matching, shortlist, hire and join workflows | Built and tested in the API; the web app does not call them |
 | Scheduled jobs | Built, on an interim in-process timer |
 | Candidate and company pages for roles, applications and shortlists | Show sample data from `apps/prototype/src/data/fixtures.ts` |
@@ -24,7 +24,7 @@ At this commit, a fresh clone installs from the lockfile, builds, and passes all
 
 - `main` is behind. All of the above is on `feat/slice-1b` until it is merged.
 - There was no git remote at the time of writing.
-- There is no CI and no deployment setup (no workflows, no Dockerfile). Hosting is an open choice in §16: Vercel plus Railway, or Fly.
+- CI runs build and all tests on every push and PR (`.github/workflows/ci.yml`). There is no deployment setup yet. Hosting is an open choice in §16: Vercel plus Railway, or Fly.
 
 ## Get it running
 
@@ -53,7 +53,7 @@ pnpm --filter @zenhyre/prototype dev
 The API runs on :4000 and the app on :3000. Things that catch people out:
 
 - **Environment files are not loaded by the API.** Nothing reads `.env` for the API or the database scripts, so export variables in your shell. Next.js does read `apps/prototype/.env.local`.
-- **Sign-in links print in the API terminal** when `RESEND_API_KEY` is unset.
+- **Sign-in links print in the API terminal** when `RESEND_API_KEY` is unset. For dev without Supabase credentials, set `AUTH_PROVIDER=fake`.
 - **Starting the API starts the scheduler,** which runs every scheduled job once at start-up against whatever database it is pointed at. Set `SCHEDULER=off` to stop that.
 - **Tests make their own databases.** Each test database is created and dropped by `packages/db/src/test/setup.ts`, so a test run does not touch your dev data. `DATABASE_URL` only tells them which server to use.
 - **Turbo caches test results.** Use `pnpm test --force` when you want everything to really run.
@@ -62,7 +62,10 @@ The API runs on :4000 and the app on :3000. Things that catch people out:
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `DATABASE_URL` | API, db scripts, tests | Required |
+| `DATABASE_URL` | API, db scripts, tests | Required. Tables live in the `zenhyre2` schema; on Supabase use the `zenhyre_api` role (`docs/supabase.md`) |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | API | Required for sign-in (Supabase Auth). Server-only |
+| `SUPABASE_JWT_SECRET` | API | Only for projects on the legacy HS256 secret; otherwise tokens are checked against the project's JWKS |
+| `AUTH_PROVIDER` | API | `fake` = offline dev sign-in, links in the log, accounts gone on restart. Refused in production |
 | `APP_BASE_URL` | API | Base of links in emails. Default `http://localhost:3000` |
 | `PORT` | API | Default 4000 |
 | `RESEND_API_KEY` | API | Sends real email. Unset in dev prints email to the log. **Unset with `NODE_ENV=production` silently drops email**, so sign-in fails with no error |
@@ -99,12 +102,12 @@ Association logins are created with a script; see `apps/prototype/README.md`.
 | `packages/shared` | Clock, domain errors |
 | `packages/db` | Drizzle schema, migrations in `drizzle/`, seed, test database setup |
 | `packages/ops` | Config keys and defaults (§17), review queue, audit |
-| `packages/identity` | Users, magic links, sessions, candidates, companies, associations |
+| `packages/identity` | Users (ids from Supabase Auth), emails, invites, candidates, companies, associations |
 | `packages/notify` | Email and in-app templates, transports |
 | `packages/gate` | Role gate rules and the model interface. Pure, no dependencies |
 | `packages/roles` | Role lifecycle table, fee terms, deposit waiver |
 | `packages/matching` | Filter, apply, ranking, freeze, stage table, the `Scorer` interface |
-| `services/api` | Hono API: routes, `workflows/`, `jobs.ts`, `scheduler.ts`, `oneRole.ts` |
+| `services/api` | Hono API: routes, `auth/` (Supabase sign-in), `workflows/`, `jobs.ts`, `scheduler.ts`, `oneRole.ts` |
 | `apps/prototype` | Next.js web app. See its `README.md` and `DESIGN.md` |
 
 Conventions to keep:
@@ -119,15 +122,16 @@ Conventions to keep:
 
 ## API reference
 
-All routes need the `zh_session` cookie unless noted. Errors are `{ error, message }` with status 400, 401, 403, 404 or 409, and validation errors are `{ error: "invalid", issues }`.
+All routes need a Supabase access token, as `Authorization: Bearer …` or the `zh_session` cookie, unless noted. Errors are `{ error, message }` with status 400, 401, 403, 404 or 409, and validation errors are `{ error: "invalid", issues }`.
 
 ### Sign-in and account
 
 | Route | Body | Notes |
 |---|---|---|
-| `POST /auth/magic-link` | `{ email }` | No session needed. Not rate-limited yet |
-| `GET /auth/redeem?t=` | | No session needed. Sets the cookie and accepts any invite in the token. Gives no second kind of account: an email that holds one role is not added to another |
-| `POST /auth/signout` | | |
+| `POST /auth/magic-link` | `{ email }` | No session needed. 5 per address and 30 per client IP (`x-zh-client-ip`) per 15 minutes, else 429 |
+| `POST /auth/redeem` | `{ t }` | No session needed. Returns `{ userId, created, purpose, session }` and accepts invites waiting for the address. Gives no second kind of account: an email that holds one role is not added to another |
+| `POST /auth/refresh` | `{ refreshToken }` | Returns a new `session`; 401 if the refresh token is spent or revoked |
+| `POST /auth/signout` | | Revokes the session |
 | `GET /me` | | User, emails, candidate, campus, membership, company, associations |
 | `POST /webhooks/resend` | Resend payload | Signed with `RESEND_WEBHOOK_SECRET` |
 
@@ -233,10 +237,9 @@ The nightly order matters: prompt, then grace, then guarantee expiry. pg-boss is
 
 ### Before going live
 
-- Rate-limit `POST /auth/magic-link`, per address and per IP.
+- The sign-in link limits are in process memory: move them to Postgres before running more than one API instance.
 - Set `APP_BASE_URL`, `RESEND_API_KEY` and `MAIL_FROM` on the API and `API_URL` on the app, and serve both over https.
 - Confirm the production URL in `apps/prototype/src/data/site.ts`; `https://zenhyre.com` is a placeholder.
-- Ignore `.env.local` files: the root `.gitignore` only covers `.env`.
 - Choose hosting, and add CI and deployment.
 
 ### Later slices (§15)

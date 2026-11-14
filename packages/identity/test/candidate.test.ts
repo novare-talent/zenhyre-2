@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { testDb } from "@zenhyre/db/test";
 import { fixedClock } from "@zenhyre/shared";
@@ -14,8 +15,10 @@ beforeAll(async () => {
 });
 afterAll(() => close());
 
+/** Stands in for a Supabase sign-in: the same address always maps to the same auth user id. */
 async function signedIn(email: string) {
-  return id.redeemMagicLink((await id.issueMagicLink(email, "signin", {})).token);
+  const r = await id.ensureUser({ id: (await id.userIdForEmail(email)) ?? randomUUID(), email });
+  return { userId: r.user.id, created: r.created };
 }
 
 describe("candidate via campus email", () => {
