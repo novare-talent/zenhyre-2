@@ -232,7 +232,7 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
   it("a closed role stays closed: the job, closeRole and a withdrawal all leave it as it is", async () => {
     const mails = w.t.transport.sent.length;
     expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 0 });
-    const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test" });
+    const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test", auth: w.t.auth });
     expect(await closeRole(deps, { roleId })).toMatchObject({ closed: false, closedMatches: [], role: { status: "closed" } });
     expect((await w.withdraw(w.ceo, roleId)).status).toBe(409);
     expect((await w.withdraw(w.staff, roleId)).status).toBe(409);
@@ -254,7 +254,7 @@ describe("guarantee expiry (§14: the Slice-1 path, deposit waived, through hire
     expect(await w.runJob("role.guarantee_expiry")).toMatchObject({ roles: 1 });
     expect((await w.row(laterId)).status).toBe("closed");
     expect((await w.row(unaskedId)).status).toBe("closing");
-    const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test" });
+    const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test", auth: w.t.auth });
     expect(await guaranteeExpiry(deps, { roleId: unaskedId })).toEqual({ closed: false, reason: "joining not confirmed" });
     expect(await guaranteeExpiry(deps, { roleId: laterId })).toEqual({ closed: false, reason: "not closing on a hire" });
   });

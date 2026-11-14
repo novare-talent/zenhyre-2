@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { testDb } from "@zenhyre/db/test";
 import { schema } from "@zenhyre/db";
@@ -8,7 +9,7 @@ beforeAll(async () => ({ db, close } = await testDb()));
 afterAll(() => close());
 
 async function userWithEmails(emails: string[]) {
-  const [u] = await db.insert(schema.user).values({}).returning();
+  const [u] = await db.insert(schema.user).values({ id: randomUUID() }).returning();
   for (const [i, e] of emails.entries())
     await db.insert(schema.userEmail).values({ userId: u.id, email: e, verifiedAt: new Date(), isPrimary: i === 0 });
   return u.id;

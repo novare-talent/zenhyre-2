@@ -32,8 +32,9 @@ companyRoutes.post("/companies/:id/invites", async (c) => {
   if (!company) return c.json({ error: "not found" }, 404);
   const invitee = await identity.userIdForEmail(email);
   if (invitee) await assertFreeFor(identity, invitee, "company");
-  const { token } = await identity.inviteCompanyUser({ companyId, invitedBy: c.var.user!.id, email, staffOverride: isStaff });
-  await notify.sendToEmail(email, "company_invite", { companyName: company.name, inviterName: "A teammate", url: `${baseUrl}/auth/redeem?t=${token}` });
+  // The invite waits (7 days) until the person signs in with this address; the email points them at the login page.
+  await identity.inviteCompanyUser({ companyId, invitedBy: c.var.user!.id, email, staffOverride: isStaff });
+  await notify.sendToEmail(email, "company_invite", { companyName: company.name, inviterName: "A teammate", url: `${baseUrl}/login?as=company` });
   return c.json({ ok: true });
 });
 

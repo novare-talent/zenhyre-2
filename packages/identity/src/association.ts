@@ -1,7 +1,7 @@
 import { eq, isNull } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import { Clock } from "@zenhyre/shared";
-import { createAuth } from "./auth";
+import { createAuth, GRANT_TTL_MS } from "./auth";
 
 export function createAssociationModule(db: DbOrTx, clock: Clock) {
   const auth = createAuth(db, clock);
@@ -16,7 +16,7 @@ export function createAssociationModule(db: DbOrTx, clock: Clock) {
       return row ?? null;
     },
     async inviteAssociationAdmin(input: { associationId: string; invitedBy: string; email: string }) {
-      return auth.issueMagicLink(input.email, "association_admin_invite", { associationId: input.associationId, invitedBy: input.invitedBy });
+      return auth.createInvite({ email: input.email, purpose: "association_admin_invite", payload: { associationId: input.associationId, invitedBy: input.invitedBy }, invitedBy: input.invitedBy });
     },
     async acceptAssociationInvite(userId: string, payload: { associationId: string; invitedBy: string }) {
       const [row] = await db.insert(schema.associationAdmin)
@@ -24,19 +24,19 @@ export function createAssociationModule(db: DbOrTx, clock: Clock) {
       return row ?? { userId, associationId: payload.associationId, invitedBy: payload.invitedBy, joinedAt: clock.now() };
     },
     /**
-     * §6.5, as run in practice: Novare staff create the association's login themselves. The address becomes an
-     * admin at once; the person proves they own it the first time they sign in with a magic link.
+     * §6.5, as run in practice: Novare staff create the association's login themselves. An address that already has
+     * an account becomes an admin at once; otherwise a standing grant waits until the person first signs in with it
+     * (user ids come from Supabase Auth, so Zenhyre cannot create the user ahead of that sign-in).
      */
     async grantAssociationAdmin(input: { associationId: string; email: string; invitedBy: string | null }) {
       const email = input.email.toLowerCase();
-      let userId = await auth.userIdForEmail(email);
-      if (!userId) {
-        const [u] = await db.insert(schema.user).values({}).returning();
-        await db.insert(schema.userEmail).values({ userId: u!.id, email, isPrimary: true });
-        userId = u!.id;
+      const userId = await auth.userIdForEmail(email);
+      if (userId) {
+        await db.insert(schema.associationAdmin).values({ userId, associationId: input.associationId, invitedBy: input.invitedBy }).onConflictDoNothing();
+        return { userId, pending: false };
       }
-      await db.insert(schema.associationAdmin).values({ userId, associationId: input.associationId, invitedBy: input.invitedBy }).onConflictDoNothing();
-      return { userId };
+      await auth.createInvite({ email, purpose: "association_admin_invite", payload: { associationId: input.associationId, invitedBy: input.invitedBy }, invitedBy: input.invitedBy, ttlMs: GRANT_TTL_MS });
+      return { userId: null, pending: true };
     },
     async associationsForUser(userId: string) {
       const rows = await db.select({ a: schema.association }).from(schema.associationAdmin)

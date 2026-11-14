@@ -79,7 +79,7 @@ describe("the interim scheduler (§18 cadence)", () => {
     expect(dueJobs(new Date("2026-11-06T00:00:00Z"), ran)).toEqual(names);
   });
   it("a tick runs what is due against the real jobs, and a failing job does not stop the rest or count as run", async () => {
-    const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test" });
+    const deps = await buildDeps({ db: w.t.db, clock: w.t.clock, transport: w.t.transport, baseUrl: "http://test", auth: w.t.auth });
     const lastRun: LastRun = {};
     expect(await tick(deps, lastRun)).toEqual(names);
     expect(await tick(deps, lastRun)).toEqual([]);

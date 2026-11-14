@@ -13,6 +13,7 @@ import { systemClock } from "@zenhyre/shared";
 import { ConsoleTransport, ResendTransport } from "@zenhyre/notify";
 import { buildDeps } from "../context";
 import { assertFreeFor } from "../oneRole";
+import { authFromEnv } from "../auth/fromEnv";
 
 const args = process.argv.slice(2);
 const opt = (k: string) => { const i = args.indexOf(`--${k}`); return i > -1 ? args[i + 1] : undefined; };
@@ -30,7 +31,7 @@ try {
   const transport = process.env.RESEND_API_KEY
     ? new ResendTransport(process.env.RESEND_API_KEY, process.env.MAIL_FROM ?? "Zenhyre <no-reply@zenhyre.com>")
     : new ConsoleTransport();
-  const { identity, notify, ops } = await buildDeps({ db, clock: systemClock, transport, baseUrl });
+  const { identity, notify, ops } = await buildDeps({ db, clock: systemClock, transport, baseUrl, auth: authFromEnv() });
 
   const campus = await identity.campusByShortCode(campusCode);
   if (!campus) throw new Error(`No campus with short code ${campusCode}. Run pnpm db:seed, or check the code.`);
@@ -46,10 +47,12 @@ try {
   }
   const existing = await identity.userIdForEmail(email);
   if (existing) await assertFreeFor(identity, existing, "association"); // one email, one role
-  await identity.grantAssociationAdmin({ associationId: association.id, invitedBy: staffId, email });
+  const grant = await identity.grantAssociationAdmin({ associationId: association.id, invitedBy: staffId, email });
   await notify.sendToEmail(email, "association_admin_invite", { associationName: association.name, url: `${baseUrl}/login?as=association` });
   if (staffId) await ops.audit(staffId, "association.grant_admin", "association", association.id, email);
-  console.log(`Login created: ${email} is now an admin of "${association.name}". They log in at ${baseUrl}/login as an association.`);
+  console.log(grant.pending
+    ? `Access granted: ${email} becomes an admin of "${association.name}" the first time they log in at ${baseUrl}/login as an association.`
+    : `Access granted: ${email} is now an admin of "${association.name}". They log in at ${baseUrl}/login as an association.`);
 } catch (e) {
   console.error((e as Error).message);
   process.exitCode = 1;

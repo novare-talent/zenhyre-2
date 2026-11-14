@@ -6,6 +6,7 @@ import { fixtureGateModel } from "@zenhyre/gate";
 import { buildApp } from "./app";
 import { buildDeps } from "./context";
 import { startScheduler } from "./scheduler";
+import { authFromEnv } from "./auth/fromEnv";
 
 const { db } = createDb();
 const transport = process.env.RESEND_API_KEY
@@ -18,7 +19,7 @@ const transport = process.env.RESEND_API_KEY
 const gateModel = process.env.NODE_ENV === "production" || process.env.GATE_MODEL === "none" ? undefined
   : fixtureGateModel((role) => ({ score: 80, suggested_reach: role.campusReach, concerns: [], reason: "Dev fixture: accepted at the model pass." }));
 if (gateModel) console.log("gate: dev fixture model in use (accepts every role that passes the rules)");
-const cfg = { db, clock: systemClock, transport, gateModel, baseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000", webhookSecret: process.env.RESEND_WEBHOOK_SECRET };
+const cfg = { db, clock: systemClock, transport, gateModel, auth: authFromEnv(), baseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000", webhookSecret: process.env.RESEND_WEBHOOK_SECRET };
 const deps = await buildDeps(cfg);
 const app = await buildApp(cfg, deps);
 // The §18 jobs run on an in-process timer until pg-boss is wired; SCHEDULER=off leaves them to POST /admin/jobs/:name/run.

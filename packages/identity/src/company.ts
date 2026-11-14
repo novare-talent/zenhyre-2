@@ -23,7 +23,7 @@ export function createCompanyModule(db: DbOrTx, clock: Clock, opts: { freemailDo
     async inviteCompanyUser(input: { companyId: string; invitedBy: string; email: string; staffOverride?: boolean }) {
       const c = await get(input.companyId); if (!c) throw new NotFound("company");
       if (!input.staffOverride && domainOf(input.email) !== c.verifiedDomain) throw new Invalid(`invitee must be on the ${c.verifiedDomain} domain`);
-      return auth.issueMagicLink(input.email, "company_invite", { companyId: c.id, invitedBy: input.invitedBy });
+      return auth.createInvite({ email: input.email, purpose: "company_invite", payload: { companyId: c.id, invitedBy: input.invitedBy }, invitedBy: input.invitedBy });
     },
     async acceptCompanyInvite(userId: string, payload: { companyId: string; invitedBy: string }) {
       const [row] = await db.insert(schema.companyUser)

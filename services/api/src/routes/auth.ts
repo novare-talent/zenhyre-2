@@ -1,35 +1,70 @@
 import { Hono } from "hono";
-import { setCookie, deleteCookie, getCookie } from "hono/cookie";
 import { z } from "zod";
 import { Vars } from "../context";
 import { roleOf } from "../oneRole";
+import { AuthError, AuthSession } from "../auth/provider";
+import { accessTokenOf } from "../middleware/auth";
 
 export const authRoutes = new Hono<{ Variables: Vars }>();
 
+const sessionJson = (s: AuthSession) => ({ accessToken: s.accessToken, refreshToken: s.refreshToken, expiresAt: s.expiresAt });
+
 authRoutes.post("/auth/magic-link", async (c) => {
-  const { email } = z.object({ email: z.string().email() }).parse(await c.req.json());
-  const { identity, notify, baseUrl } = c.var.deps;
-  const { token } = await identity.issueMagicLink(email, "signin", {});
+  const { email: raw } = z.object({ email: z.string().email().max(254) }).parse(await c.req.json());
+  const email = raw.toLowerCase();
+  const { auth, notify, baseUrl, limits } = c.var.deps;
+  // The web app forwards the browser's address; a direct caller is limited by its own.
+  const ip = c.req.header("x-zh-client-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (!limits.linkPerEmail.take(email) || !limits.linkPerIp.take(ip)) {
+    return c.json({ error: "rate_limited", message: "Too many sign-in links requested. Wait a few minutes and try again." }, 429);
+  }
+  const token = await auth.issueLinkToken(email);
   // The user may not exist yet, so address by email rather than by userId.
-  await notify.sendToEmail(email, "magic_link", { url: `${baseUrl}/auth/redeem?t=${token}` });
+  await notify.sendToEmail(email, "magic_link", { url: `${baseUrl}/auth/redeem?t=${encodeURIComponent(token)}` });
   return c.json({ ok: true });
 });
 
-authRoutes.get("/auth/redeem", async (c) => {
-  const t = c.req.query("t") ?? "";
-  const r = await c.var.deps.identity.redeemMagicLink(t);
-  // One email, one role: an invite is only accepted by someone with no role yet, or already in that role.
-  const held = await roleOf(c.var.deps.identity, r.userId);
-  if (r.purpose === "company_invite" && (!held || held === "company")) await c.var.deps.identity.acceptCompanyInvite(r.userId, r.payload as any);
-  if (r.purpose === "association_admin_invite" && (!held || held === "association")) await c.var.deps.identity.acceptAssociationInvite(r.userId, r.payload as any);
-  setCookie(c, "zh_session", r.sessionId, { httpOnly: true, sameSite: "Lax", path: "/", maxAge: 30 * 24 * 3600 });
-  return c.json({ userId: r.userId, created: r.created, purpose: r.purpose });
+/**
+ * Exchanges an emailed link token for a session, makes sure the Zenhyre user exists, and accepts any invites waiting
+ * for this address. One email, one role: an invite is only accepted by someone with no role yet, or already in that role.
+ */
+authRoutes.post("/auth/redeem", async (c) => {
+  const { t } = z.object({ t: z.string().min(1).max(512) }).parse(await c.req.json());
+  const { auth, identity } = c.var.deps;
+  let session: AuthSession;
+  try { session = await auth.redeemLinkToken(t); } catch (e) {
+    if (e instanceof AuthError) return c.json({ error: "invalid", message: "That link is not valid any more. Ask for a new one." }, 400);
+    throw e;
+  }
+  const { user, created } = await identity.ensureUser({ id: session.claims.sub, email: session.claims.email });
+  const emails = (await identity.emailsFor(user.id)).map((e) => e.email);
+  let purpose: "signin" | "company_invite" | "association_admin_invite" = "signin";
+  for (const inv of await identity.pendingInvitesFor(emails)) {
+    const held = await roleOf(identity, user.id);
+    if (inv.purpose === "company_invite" && (!held || held === "company")) {
+      await identity.acceptCompanyInvite(user.id, inv.payload as any);
+    } else if (inv.purpose === "association_admin_invite" && (!held || held === "association")) {
+      await identity.acceptAssociationInvite(user.id, inv.payload as any);
+    } else continue;
+    await identity.markInviteAccepted(inv.id);
+    if (purpose === "signin") purpose = inv.purpose as typeof purpose;
+  }
+  return c.json({ userId: user.id, created, purpose, session: sessionJson(session) });
+});
+
+authRoutes.post("/auth/refresh", async (c) => {
+  const { refreshToken } = z.object({ refreshToken: z.string().min(1).max(2048) }).parse(await c.req.json());
+  try {
+    return c.json({ session: sessionJson(await c.var.deps.auth.refresh(refreshToken)) });
+  } catch (e) {
+    if (e instanceof AuthError) return c.json({ error: "unauthenticated" }, 401);
+    throw e;
+  }
 });
 
 authRoutes.post("/auth/signout", async (c) => {
-  const sid = getCookie(c, "zh_session");
-  if (sid) await c.var.deps.identity.endSession(sid);
-  deleteCookie(c, "zh_session", { path: "/" });
+  const token = accessTokenOf(c);
+  if (token) await c.var.deps.auth.signOut(token);
   return c.json({ ok: true });
 });
 

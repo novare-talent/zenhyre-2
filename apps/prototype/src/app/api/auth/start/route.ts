@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { campusForEmail } from "@/data/campuses";
 import { rulesFromConfig } from "@/lib/config";
-import { apiFetch, COOKIE, isSeat, sameOrigin, setAuthCookie } from "@/lib/session";
+import { apiFetch, clientIp, COOKIE, isSeat, sameOrigin, setAuthCookie } from "@/lib/session";
 
 /** Step 1 of login: remember the one role chosen, ask the API to email a sign-in link (§3.2). */
 export async function POST(req: NextRequest) {
@@ -19,7 +19,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "email", message: kind === "campus" ? "That is a campus address. Companies log in with a work email on the company's own domain." : "Companies log in with a work email on the company's own domain. Personal mailboxes such as Gmail, Outlook and Yahoo are not accepted." }, { status: 400 });
   }
   try {
-    const r = await apiFetch("/auth/magic-link", { method: "POST", body: JSON.stringify({ email }) });
+    const r = await apiFetch("/auth/magic-link", { method: "POST", body: JSON.stringify({ email }), headers: { "x-zh-client-ip": clientIp(req) } });
+    if (r.status === 429) return NextResponse.json({ error: "slow", message: "Too many sign-in links asked for. Wait a few minutes and try again." }, { status: 429 });
     if (!r.ok) throw new Error(String(r.status));
   } catch {
     return NextResponse.json({ error: "down", message: "We could not send the link just now. Try again in a minute." }, { status: 502 });

@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1793878279233,
-      "tag": "0000_left_vance_astro",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1793987805006,
-      "tag": "0001_solid_gideon",
+      "when": 1794663222992,
+      "tag": "0000_baseline",
       "breakpoints": true
     }
   ]

@@ -1,6 +1,7 @@
 // Server-only session layer. The browser never talks to the API directly: these helpers and the
-// route handlers under /api forward the HTTP-only session cookie to it (spec §3.2: server-backed
-// sessions as HTTP-only cookies). One login sits in exactly one seat, held in the zh_seat cookie.
+// route handlers under /api forward the HTTP-only session cookie to it. Sign-in is Supabase Auth behind the API:
+// zh_session holds the (one-hour) access token, zh_refresh the refresh token and zh_exp its expiry; proxy.ts
+// refreshes before expiry. One login sits in exactly one seat, held in the zh_seat cookie.
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { NextRequest, NextResponse } from "next/server";
@@ -11,7 +12,7 @@ export const isSeat = (v: unknown): v is Seat => typeof v === "string" && (SEATS
 export const SEAT_LABEL: Record<Seat, string> = { candidate: "Candidate", company: "Company", association: "Association" };
 
 export const API_URL = (process.env.API_URL ?? "http://localhost:4000").replace(/\/$/, "");
-export const COOKIE = { session: "zh_session", seat: "zh_seat", intent: "zh_intent" } as const;
+export const COOKIE = { session: "zh_session", refresh: "zh_refresh", exp: "zh_exp", seat: "zh_seat", intent: "zh_intent" } as const;
 const THIRTY_DAYS = 30 * 24 * 3600;
 
 export interface Me {
@@ -90,6 +91,16 @@ export function setAuthCookie(res: NextResponse, req: NextRequest, name: string,
 export function clearAuthCookies(res: NextResponse) {
   for (const name of Object.values(COOKIE)) res.cookies.set(name, "", { path: "/", maxAge: 0 });
 }
+export interface ApiSession { accessToken: string; refreshToken: string; expiresAt: number }
+/** Store a session from POST /auth/redeem or /auth/refresh. */
+export function setSessionCookies(res: NextResponse, req: NextRequest, s: ApiSession) {
+  setAuthCookie(res, req, COOKIE.session, s.accessToken);
+  setAuthCookie(res, req, COOKIE.refresh, s.refreshToken);
+  setAuthCookie(res, req, COOKIE.exp, String(s.expiresAt));
+}
+/** The browser's address, for the API's per-IP sign-in limit. */
+export const clientIp = (req: NextRequest) => req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+
 /** Mutating handlers accept same-origin requests only. SameSite=Lax already blocks cross-site POSTs; this is the second lock. */
 export function sameOrigin(req: NextRequest) {
   const origin = req.headers.get("origin");

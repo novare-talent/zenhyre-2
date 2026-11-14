@@ -1,12 +1,12 @@
 {
-  "id": "5519b60b-ef5a-41ee-9fa7-cb89cd575655",
+  "id": "0cef9847-8c4d-4008-827f-12b169d75854",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.association": {
+    "zenhyre2.association": {
       "name": "association",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
@@ -44,7 +44,7 @@
         "payout_mode": {
           "name": "payout_mode",
           "type": "payout_mode",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true,
           "default": "'cash'"
@@ -62,6 +62,7 @@
           "name": "association_campus_id_campus_id_fk",
           "tableFrom": "association",
           "tableTo": "campus",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "campus_id"
           ],
@@ -86,9 +87,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.association_admin": {
+    "zenhyre2.association_admin": {
       "name": "association_admin",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -122,6 +123,7 @@
           "name": "association_admin_user_id_user_id_fk",
           "tableFrom": "association_admin",
           "tableTo": "user",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "user_id"
           ],
@@ -135,6 +137,7 @@
           "name": "association_admin_association_id_association_id_fk",
           "tableFrom": "association_admin",
           "tableTo": "association",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "association_id"
           ],
@@ -159,9 +162,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.campus": {
+    "zenhyre2.campus": {
       "name": "campus",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
@@ -218,9 +221,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.candidate": {
+    "zenhyre2.candidate": {
       "name": "candidate",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -262,14 +265,14 @@
         "status": {
           "name": "status",
           "type": "candidate_status",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true
         },
         "verification_state": {
           "name": "verification_state",
           "type": "verification_state",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true
         },
@@ -283,7 +286,7 @@
         "verification_source": {
           "name": "verification_source",
           "type": "verification_source",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true
         },
@@ -309,7 +312,7 @@
         "trust_status": {
           "name": "trust_status",
           "type": "trust_status",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true,
           "default": "'ok'"
@@ -341,6 +344,7 @@
           "name": "candidate_user_id_user_id_fk",
           "tableFrom": "candidate",
           "tableTo": "user",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "user_id"
           ],
@@ -354,6 +358,7 @@
           "name": "candidate_campus_id_campus_id_fk",
           "tableFrom": "candidate",
           "tableTo": "campus",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "campus_id"
           ],
@@ -370,9 +375,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.company": {
+    "zenhyre2.company": {
       "name": "company",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
@@ -396,7 +401,7 @@
         "status": {
           "name": "status",
           "type": "company_status",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
@@ -423,9 +428,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.company_user": {
+    "zenhyre2.company_user": {
       "name": "company_user",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -442,7 +447,7 @@
         "role": {
           "name": "role",
           "type": "company_user_role",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true
         },
@@ -472,6 +477,7 @@
           "name": "company_user_user_id_user_id_fk",
           "tableFrom": "company_user",
           "tableTo": "user",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "user_id"
           ],
@@ -485,6 +491,7 @@
           "name": "company_user_company_id_company_id_fk",
           "tableFrom": "company_user",
           "tableTo": "company",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "company_id"
           ],
@@ -509,15 +516,16 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.magic_link_token": {
-      "name": "magic_link_token",
-      "schema": "",
+    "zenhyre2.invite": {
+      "name": "invite",
+      "schema": "zenhyre2",
       "columns": {
-        "token": {
-          "name": "token",
-          "type": "text",
+        "id": {
+          "name": "id",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "email": {
           "name": "email",
@@ -538,48 +546,23 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
+        "invited_by": {
+          "name": "invited_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         },
-        "used_at": {
-          "name": "used_at",
+        "accepted_at": {
+          "name": "accepted_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.session": {
-      "name": "session",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -589,38 +572,39 @@
           "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {
-        "session_user_id_user_id_fk": {
-          "name": "session_user_id_user_id_fk",
-          "tableFrom": "session",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
+      "indexes": {
+        "invite_email_idx": {
+          "name": "invite_email_idx",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
           ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.user": {
+    "zenhyre2.user": {
       "name": "user",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
           "type": "uuid",
           "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
+          "notNull": true
         },
         "is_staff": {
           "name": "is_staff",
@@ -645,9 +629,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.user_email": {
+    "zenhyre2.user_email": {
       "name": "user_email",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -694,6 +678,7 @@
           "name": "user_email_user_id_user_id_fk",
           "tableFrom": "user_email",
           "tableTo": "user",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "user_id"
           ],
@@ -707,6 +692,7 @@
           "name": "user_email_campus_id_campus_id_fk",
           "tableFrom": "user_email",
           "tableTo": "campus",
+          "schemaTo": "zenhyre2",
           "columnsFrom": [
             "campus_id"
           ],
@@ -723,9 +709,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.config_value": {
+    "zenhyre2.config_value": {
       "name": "config_value",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "key": {
           "name": "key",
@@ -761,9 +747,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.review_item": {
+    "zenhyre2.review_item": {
       "name": "review_item",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
@@ -775,7 +761,7 @@
         "kind": {
           "name": "kind",
           "type": "review_kind",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true
         },
@@ -867,9 +853,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.staff_action": {
+    "zenhyre2.staff_action": {
       "name": "staff_action",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
@@ -924,9 +910,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.notification": {
+    "zenhyre2.notification": {
       "name": "notification",
-      "schema": "",
+      "schema": "zenhyre2",
       "columns": {
         "id": {
           "name": "id",
@@ -957,7 +943,7 @@
         "channel": {
           "name": "channel",
           "type": "notify_channel",
-          "typeSchema": "public",
+          "typeSchema": "zenhyre2",
           "primaryKey": false,
           "notNull": true
         },
@@ -994,55 +980,855 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "zenhyre2.role": {
+      "name": "role",
+      "schema": "zenhyre2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jd": {
+          "name": "jd",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "type": {
+          "name": "type",
+          "type": "role_type",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ctc_min": {
+          "name": "ctc_min",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ctc_max": {
+          "name": "ctc_max",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "years_exp_min": {
+          "name": "years_exp_min",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "years_exp_max": {
+          "name": "years_exp_max",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "locations": {
+          "name": "locations",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "campus_reach": {
+          "name": "campus_reach",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "status": {
+          "name": "status",
+          "type": "role_status",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "final_gate_decision_id": {
+          "name": "final_gate_decision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_terms": {
+          "name": "fee_terms",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_terms_released_at": {
+          "name": "fee_terms_released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_terms_accepted_at": {
+          "name": "fee_terms_accepted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deposit_amount": {
+          "name": "deposit_amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deposit_mode": {
+          "name": "deposit_mode",
+          "type": "deposit_mode",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deposit_order_id": {
+          "name": "deposit_order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refund_owed": {
+          "name": "refund_owed",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "broadcast_opens_at": {
+          "name": "broadcast_opens_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "broadcast_closes_at": {
+          "name": "broadcast_closes_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "broadcast_extended_at": {
+          "name": "broadcast_extended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shortlist_ready_at": {
+          "name": "shortlist_ready_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shortlist_cap": {
+          "name": "shortlist_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 25
+        },
+        "nudge_cap": {
+          "name": "nudge_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 150
+        },
+        "replacement_of_role_id": {
+          "name": "replacement_of_role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hired_match_id": {
+          "name": "hired_match_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hired_at": {
+          "name": "hired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "job_error": {
+          "name": "job_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "role_company_idx": {
+          "name": "role_company_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "role_status_idx": {
+          "name": "role_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_company_id_company_id_fk": {
+          "name": "role_company_id_company_id_fk",
+          "tableFrom": "role",
+          "tableTo": "company",
+          "schemaTo": "zenhyre2",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "zenhyre2.role_event": {
+      "name": "role_event",
+      "schema": "zenhyre2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigserial",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_status": {
+          "name": "from_status",
+          "type": "role_status",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_status": {
+          "name": "to_status",
+          "type": "role_status",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "role_event_role_idx": {
+          "name": "role_event_role_idx",
+          "columns": [
+            {
+              "expression": "role_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_event_role_id_role_id_fk": {
+          "name": "role_event_role_id_role_id_fk",
+          "tableFrom": "role_event",
+          "tableTo": "role",
+          "schemaTo": "zenhyre2",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "zenhyre2.role_gate_decision": {
+      "name": "role_gate_decision",
+      "schema": "zenhyre2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "gate_stage",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "gate_outcome",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule": {
+          "name": "rule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suggested_reach": {
+          "name": "suggested_reach",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "model_score": {
+          "name": "model_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "role_gate_decision_role_idx": {
+          "name": "role_gate_decision_role_idx",
+          "columns": [
+            {
+              "expression": "role_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "decided_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_gate_decision_role_id_role_id_fk": {
+          "name": "role_gate_decision_role_id_role_id_fk",
+          "tableFrom": "role_gate_decision",
+          "tableTo": "role",
+          "schemaTo": "zenhyre2",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "zenhyre2.match": {
+      "name": "match",
+      "schema": "zenhyre2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "candidate_id": {
+          "name": "candidate_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fit_score": {
+          "name": "fit_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fit_reason": {
+          "name": "fit_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "nudged_at": {
+          "name": "nudged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rank": {
+          "name": "rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stage": {
+          "name": "stage",
+          "type": "match_stage",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'scored'"
+        },
+        "rejection_category": {
+          "name": "rejection_category",
+          "type": "rejection_category",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejection_note": {
+          "name": "rejection_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "offered_ctc": {
+          "name": "offered_ctc",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hired_ctc": {
+          "name": "hired_ctc",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "joined_on": {
+          "name": "joined_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "join_prompt_sent_at": {
+          "name": "join_prompt_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "join_confirmed_at": {
+          "name": "join_confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "join_confirmed_by": {
+          "name": "join_confirmed_by",
+          "type": "join_confirmed_by",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "override": {
+          "name": "override",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "match_candidate_idx": {
+          "name": "match_candidate_idx",
+          "columns": [
+            {
+              "expression": "candidate_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "match_role_stage_idx": {
+          "name": "match_role_stage_idx",
+          "columns": [
+            {
+              "expression": "role_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "match_role_id_role_id_fk": {
+          "name": "match_role_id_role_id_fk",
+          "tableFrom": "match",
+          "tableTo": "role",
+          "schemaTo": "zenhyre2",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "match_candidate_id_candidate_user_id_fk": {
+          "name": "match_candidate_id_candidate_user_id_fk",
+          "tableFrom": "match",
+          "tableTo": "candidate",
+          "schemaTo": "zenhyre2",
+          "columnsFrom": [
+            "candidate_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "match_role_candidate_uq": {
+          "name": "match_role_candidate_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "role_id",
+            "candidate_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "zenhyre2.match_event": {
+      "name": "match_event",
+      "schema": "zenhyre2",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigserial",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "match_id": {
+          "name": "match_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_stage": {
+          "name": "from_stage",
+          "type": "match_stage",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_stage": {
+          "name": "to_stage",
+          "type": "match_stage",
+          "typeSchema": "zenhyre2",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "match_event_match_idx": {
+          "name": "match_event_match_idx",
+          "columns": [
+            {
+              "expression": "match_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "match_event_match_id_match_id_fk": {
+          "name": "match_event_match_id_match_id_fk",
+          "tableFrom": "match_event",
+          "tableTo": "match",
+          "schemaTo": "zenhyre2",
+          "columnsFrom": [
+            "match_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {
-    "public.candidate_status": {
+    "zenhyre2.candidate_status": {
       "name": "candidate_status",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "student",
         "final_year",
         "alumnus"
       ]
     },
-    "public.company_status": {
+    "zenhyre2.company_status": {
       "name": "company_status",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "active",
         "probation",
         "banned"
       ]
     },
-    "public.company_user_role": {
+    "zenhyre2.company_user_role": {
       "name": "company_user_role",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "owner",
         "member"
       ]
     },
-    "public.payout_mode": {
+    "zenhyre2.payout_mode": {
       "name": "payout_mode",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "cash",
         "sponsorship_credit"
       ]
     },
-    "public.trust_status": {
+    "zenhyre2.trust_status": {
       "name": "trust_status",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "ok",
         "restricted",
         "blocked"
       ]
     },
-    "public.verification_source": {
+    "zenhyre2.verification_source": {
       "name": "verification_source",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "campus_email",
         "referral",
@@ -1050,9 +1836,9 @@
         "staff"
       ]
     },
-    "public.verification_state": {
+    "zenhyre2.verification_state": {
       "name": "verification_state",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "verified",
         "referral_pending",
@@ -1060,9 +1846,9 @@
         "rejected"
       ]
     },
-    "public.review_kind": {
+    "zenhyre2.review_kind": {
       "name": "review_kind",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "gate",
         "verification",
@@ -1073,16 +1859,114 @@
         "alert"
       ]
     },
-    "public.notify_channel": {
+    "zenhyre2.notify_channel": {
       "name": "notify_channel",
-      "schema": "public",
+      "schema": "zenhyre2",
       "values": [
         "email",
         "in_app"
       ]
+    },
+    "zenhyre2.deposit_mode": {
+      "name": "deposit_mode",
+      "schema": "zenhyre2",
+      "values": [
+        "razorpay",
+        "waived"
+      ]
+    },
+    "zenhyre2.gate_outcome": {
+      "name": "gate_outcome",
+      "schema": "zenhyre2",
+      "values": [
+        "accept",
+        "reject",
+        "needs_review"
+      ]
+    },
+    "zenhyre2.gate_stage": {
+      "name": "gate_stage",
+      "schema": "zenhyre2",
+      "values": [
+        "rules",
+        "model",
+        "human"
+      ]
+    },
+    "zenhyre2.role_status": {
+      "name": "role_status",
+      "schema": "zenhyre2",
+      "values": [
+        "draft",
+        "gated",
+        "rejected",
+        "terms_pending",
+        "deposit_pending",
+        "broadcast",
+        "shortlist_ready",
+        "closing",
+        "closed",
+        "withdrawn"
+      ]
+    },
+    "zenhyre2.role_type": {
+      "name": "role_type",
+      "schema": "zenhyre2",
+      "values": [
+        "intern",
+        "fresher",
+        "experienced"
+      ]
+    },
+    "zenhyre2.join_confirmed_by": {
+      "name": "join_confirmed_by",
+      "schema": "zenhyre2",
+      "values": [
+        "candidate",
+        "grace",
+        "staff"
+      ]
+    },
+    "zenhyre2.match_stage": {
+      "name": "match_stage",
+      "schema": "zenhyre2",
+      "values": [
+        "scored",
+        "applied",
+        "pending_approval",
+        "shortlisted",
+        "viewed",
+        "interviewed",
+        "offered",
+        "offer_accepted",
+        "hired",
+        "offer_reneged",
+        "rejected",
+        "withdrawn",
+        "did_not_join",
+        "left_early",
+        "declined_by_staff",
+        "role_closed"
+      ]
+    },
+    "zenhyre2.rejection_category": {
+      "name": "rejection_category",
+      "schema": "zenhyre2",
+      "values": [
+        "skills",
+        "experience",
+        "location",
+        "compensation",
+        "culture",
+        "position_filled",
+        "no_show",
+        "other"
+      ]
     }
   },
-  "schemas": {},
+  "schemas": {
+    "zenhyre2": "zenhyre2"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

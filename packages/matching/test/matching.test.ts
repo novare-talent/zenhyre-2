@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { schema, type Db } from "@zenhyre/db";
@@ -27,7 +28,7 @@ afterAll(() => close());
 type CandOver = Partial<Omit<typeof schema.candidate.$inferInsert, "userId">>;
 /** A verified final-year candidate on campus A with a fixture fit score. */
 async function mkCandidate(score: number, over: CandOver = {}): Promise<MatchingCandidate> {
-  const [u] = await db.insert(schema.user).values({}).returning();
+  const [u] = await db.insert(schema.user).values({ id: randomUUID() }).returning();
   const [c] = await db.insert(schema.candidate).values({
     userId: u!.id, campusId: campusA, gradDate: "2027-06-30", course: "B.Tech", status: "final_year",
     verificationState: "verified", verificationSource: "campus_email", ...over }).returning();
