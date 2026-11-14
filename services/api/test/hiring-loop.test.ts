@@ -2,7 +2,7 @@
 // → terms released and accepted → deposit waived → broadcast → nudge → apply × N with displacement → freeze →
 // company actions → hired → did not join → shortlist reopens → second hire.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { fixtureGateModel } from "@zenhyre/gate";
 import { fixedScorer } from "@zenhyre/matching";

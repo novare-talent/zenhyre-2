@@ -1,6 +1,6 @@
 // §9.2 Joining: the "did you join?" prompt, the candidate's answer, the grace period, and the dispute a "no" opens.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { DAY, MINUTE, body, post, world, type Seat, type World } from "./world";
 

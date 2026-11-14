@@ -101,5 +101,15 @@ export const SCHEDULED_JOBS = {
     sweep(deps, "role.guarantee_expiry", await deps.roles.listClosingWithHire(), async (roleId) => (await guaranteeExpiry(deps, { roleId })).closed),
   /** Nightly: student → final_year → alumnus by `grad_date` (§6.1). */
   "candidate.status_flip": async (deps: AppDeps) => ({ candidates: await deps.identity.refreshCandidateStatuses() }),
+  /** Nightly: ask candidates to add a personal email at `identity.grad_nudge_days` around graduation (§6.1), once per offset. */
+  "candidate.grad_nudge": async (deps: AppDeps) => {
+    let sent = 0;
+    for (const { userId, offset } of await deps.identity.candidatesDueGradNudge(await deps.ops.config.get("identity.grad_nudge_days"))) {
+      if (await deps.notify.alreadySent(userId, "add_personal_email", "offset", offset)) continue;
+      await deps.notify.send(userId, "add_personal_email", { offset });
+      sent++;
+    }
+    return { candidates: sent };
+  },
 } as const;
 export type ScheduledJobName = keyof typeof SCHEDULED_JOBS;

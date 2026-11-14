@@ -1,7 +1,7 @@
 // How a role ends in Slice 1 (spec §3.3, §5, §9.1, §14): withdraw at each open state and its refusal elsewhere, the
 // terms timeout, the waived path through hire and guarantee expiry to `closed`, and the dark check.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { IllegalTransition } from "@zenhyre/shared";
 import { buildDeps } from "../src/context";

@@ -110,6 +110,24 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
       }
       return n;
     },
+    /**
+     * §6.1 graduation handoff: candidates who are `offset` days from their grad_date (negative = before), within a
+     * `windowDays` catch-up window so a missed night still nudges, and who have no verified non-campus address yet.
+     */
+    async candidatesDueGradNudge(offsets: number[], windowDays = 7) {
+      const today = clock.now().toISOString().slice(0, 10);
+      const out: { userId: string; offset: number }[] = [];
+      for (const offset of offsets) {
+        const rows = await db.select({ userId: schema.candidate.userId }).from(schema.candidate).where(and(
+          sql`${schema.candidate.gradDate} + ${offset}::int <= ${today}::date`,
+          sql`${schema.candidate.gradDate} + ${offset + windowDays}::int > ${today}::date`,
+          sql`not exists (select 1 from ${schema.userEmail} e where e.user_id = ${schema.candidate.userId}
+                and e.campus_id is null and e.verified_at is not null)`,
+        ));
+        out.push(...rows.map((r) => ({ userId: r.userId, offset })));
+      }
+      return out;
+    },
     /** For modules downstream of identity (matching) that hold candidate ids and need their current state. */
     async listCandidatesByIds(userIds: string[]) {
       if (!userIds.length) return [];

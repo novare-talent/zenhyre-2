@@ -22,9 +22,9 @@
     "@zenhyre/ops": "workspace:*",
     "@zenhyre/roles": "workspace:*",
     "@zenhyre/shared": "workspace:*",
-    "drizzle-orm": "^0.36.0",
     "hono": "^4.6.0",
     "jose": "5.9.6",
+    "pg-boss": "10.1.5",
     "svix": "^1.40.0",
     "zod": "^3.23.0"
   },

@@ -7,7 +7,7 @@ import { fakeAuth } from "../src/auth/fakeAuth";
 
 /** A fresh database and app per test file. The clock is fixed at `iso` and can be moved with `clock.set` / `clock.advance`. */
 export async function testApp(iso = "2026-11-05T10:00:00Z", extra: Partial<Pick<AppConfig, "gateModel" | "scorer" | "jobs" | "linkLimits">> & { accessTtlMs?: number } = {}) {
-  const { db, close } = await testDb();
+  const { db, url, close } = await testDb();
   const transport = new MemoryTransport();
   const clock = mutableClock(iso);
   // Scenario tests move the clock by days; the web app would refresh tokens meanwhile. Expiry itself is tested in auth.test.ts.
@@ -26,5 +26,5 @@ export async function testApp(iso = "2026-11-05T10:00:00Z", extra: Partial<Pick<
   }
   const as = (cookie: string) => (path: string, init: RequestInit = {}) =>
     app.request(path, { ...init, headers: { ...(init.headers ?? {}), cookie, "content-type": "application/json" } });
-  return { app, db, close, transport, clock, auth, signIn, as };
+  return { app, db, url, close, transport, clock, auth, signIn, as };
 }

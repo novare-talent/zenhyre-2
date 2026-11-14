@@ -11,6 +11,8 @@ import { roleRoutes } from "./routes/roles";
 import { applicationRoutes } from "./routes/applications";
 import { adminRoleRoutes } from "./routes/adminRoles";
 import { webhookRoutes } from "./routes/webhooks";
+import { notificationRoutes } from "./routes/notifications";
+import { associationRoutes } from "./routes/association";
 
 export async function buildApp(cfg: AppConfig, built?: AppDeps) {
   const deps = built ?? await buildDeps(cfg);
@@ -32,6 +34,8 @@ export async function buildApp(cfg: AppConfig, built?: AppDeps) {
   app.route("/", roleRoutes);
   app.route("/", applicationRoutes);
   app.route("/", adminRoleRoutes);
+  app.route("/", notificationRoutes);
+  app.route("/", associationRoutes);
   // Task 12 mounts: webhookRoutes (unauthenticated) and the guarded route groups.
   // Guards are applied per path prefix inside each route file, never as `use("*")` on a
   // sub-app, because sub-app middleware registered on "*" leaks onto every later route.

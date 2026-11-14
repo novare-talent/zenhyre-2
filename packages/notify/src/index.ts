@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import { TEMPLATES, TemplateName } from "./templates";
 import { Transport } from "./transport";
@@ -28,6 +28,36 @@ function buildNotify(db: DbOrTx, transport: Transport) {
       await transport.send({ to: email.toLowerCase(), subject: t.subject(data), text: t.text(data) });
     },
     async hasDeliverableEmail(userId: string) { return (await deliverableEmail(userId)) !== null; },
+    /** Whether this template already went to the user with `data[key] === value` (for jobs that must not repeat). */
+    async alreadySent(userId: string, template: TemplateName, key: string, value: string | number) {
+      const [row] = await db.select({ id: schema.notification.id }).from(schema.notification)
+        .where(and(eq(schema.notification.userId, userId), eq(schema.notification.template, template),
+          sql`${schema.notification.data}->>${key} = ${String(value)}`)).limit(1);
+      return !!row;
+    },
+    /** The in-app feed (§11): newest first, with the subject line each template renders. */
+    async listInApp(userId: string, opts: { limit?: number; unreadOnly?: boolean } = {}) {
+      const conds = [eq(schema.notification.userId, userId), eq(schema.notification.channel, "in_app")];
+      if (opts.unreadOnly) conds.push(isNull(schema.notification.readAt));
+      const rows = await db.select().from(schema.notification).where(and(...conds))
+        .orderBy(desc(schema.notification.createdAt)).limit(Math.min(opts.limit ?? 50, 200));
+      const [unread] = await db.select({ n: count() }).from(schema.notification)
+        .where(and(eq(schema.notification.userId, userId), eq(schema.notification.channel, "in_app"), isNull(schema.notification.readAt)));
+      return {
+        unread: Number(unread?.n ?? 0),
+        items: rows.map((r) => {
+          const t = TEMPLATES[r.template as TemplateName];
+          return { id: r.id, template: r.template, title: t ? t.subject(r.data) : r.template, data: r.data, createdAt: r.createdAt, readAt: r.readAt };
+        }),
+      };
+    },
+    /** Marks the given in-app notifications read (or all of them), only ever the caller's own. */
+    async markRead(userId: string, ids?: string[]) {
+      const conds = [eq(schema.notification.userId, userId), eq(schema.notification.channel, "in_app"), isNull(schema.notification.readAt)];
+      if (ids) { if (!ids.length) return 0; conds.push(inArray(schema.notification.id, ids)); }
+      const rows = await db.update(schema.notification).set({ readAt: new Date() }).where(and(...conds)).returning({ id: schema.notification.id });
+      return rows.length;
+    },
     async send(userId: string, template: TemplateName, data: Record<string, unknown>): Promise<SendResult> {
       const t = TEMPLATES[template];
       const result: SendResult = { email: "skipped", inApp: false };

@@ -5,7 +5,7 @@ import { apiFetch, COOKIE, sameOrigin } from "@/lib/session";
  * Same-origin proxy for the seat APIs: the browser calls /api/zh/<path> and this forwards it to the API with the
  * HTTP-only session cookie. Only the seat-facing route groups are reachable; auth, admin and webhooks are not.
  */
-const ALLOWED = [/^\/companies\/[^/]+\/roles(\/|$)/, /^\/roles\//, /^\/matches\//, /^\/me\/(roles|applications)(\/|$)/];
+const ALLOWED = [/^\/companies\/[^/]+\/roles(\/|$)/, /^\/roles\//, /^\/matches\//, /^\/me\/(roles|applications|notifications)(\/|$)/, /^\/association\/reviews(\/|$)/];
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;

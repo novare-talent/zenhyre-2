@@ -9,7 +9,7 @@ const DEFAULT_URL = "postgres://zenhyre:zenhyre@localhost:5433/zenhyre";
  * Creates a fresh *database* per test file so files can run in parallel.
  * (Per-schema isolation does not work: drizzle-kit's generated SQL hard-codes `"public".` on enums and FK targets.)
  */
-export async function testDb(): Promise<{ db: Db; close: () => Promise<void> }> {
+export async function testDb(): Promise<{ db: Db; url: string; close: () => Promise<void> }> {
   const name = "t_" + Math.random().toString(36).slice(2, 10);
   const baseUrl = process.env.DATABASE_URL ?? DEFAULT_URL;
   const admin = createDb(baseUrl);
@@ -20,6 +20,7 @@ export async function testDb(): Promise<{ db: Db; close: () => Promise<void> }> 
   await migrate(db, { migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)), migrationsSchema: DB_SCHEMA });
   return {
     db,
+    url: url.toString(),
     close: async () => {
       await close();
       await admin.db.execute(sql.raw(`DROP DATABASE ${name}`));
