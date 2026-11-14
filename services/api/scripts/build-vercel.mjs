@@ -28,9 +28,11 @@ await writeFile(`${fn}/.vc-config.json`, JSON.stringify({
 await writeFile(`${out}/config.json`, JSON.stringify({
   version: 3,
   routes: [{ src: "/(.*)", dest: "/api" }],
+  // Vercel Hobby allows a cron at most once a day (and rejects the deploy otherwise): set VERCEL_PLAN=hobby to run
+  // the "hourly" jobs daily as well. Staff can still close a broadcast early from the console.
   crons: [
-    { path: "/cron/hourly", schedule: "0 * * * *" },
+    { path: "/cron/hourly", schedule: process.env.VERCEL_PLAN === "hobby" ? "30 0 * * *" : "0 * * * *" },
     { path: "/cron/nightly", schedule: "0 0 * * *" },
   ],
 }, null, 2));
-console.log("vercel: .vercel/output written (function api, region sin1, 2 crons)");
+console.log(`vercel: .vercel/output written (function api, region sin1, crons ${process.env.VERCEL_PLAN === "hobby" ? "daily (hobby)" : "hourly + nightly"})`);
