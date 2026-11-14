@@ -1,5 +1,5 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify, type JWTPayload } from "jose";
 import { AuthClaims, AuthError, AuthProvider, AuthSession } from "./provider";
 
 export interface SupabaseAuthConfig {
@@ -23,6 +23,18 @@ export function supabaseAuth(cfg: SupabaseAuthConfig): AuthProvider {
   const issuer = `${base}/auth/v1`;
   const secret = cfg.jwtSecret ? new TextEncoder().encode(cfg.jwtSecret) : null;
   const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+
+  // Fallback verification through Supabase (GET /auth/v1/user), cached briefly so a page's several API calls cost one.
+  const verified = new Map<string, { claims: AuthClaims | null; until: number }>();
+  async function remoteVerify(token: string): Promise<AuthClaims | null> {
+    const hit = verified.get(token);
+    if (hit && hit.until > Date.now()) return hit.claims;
+    const { data, error } = await admin.auth.getUser(token);
+    const claims = !error && data.user?.email ? { sub: data.user.id, email: data.user.email.toLowerCase() } : null;
+    if (verified.size > 10_000) verified.clear();
+    verified.set(token, { claims, until: Date.now() + 60_000 });
+    return claims;
+  }
 
   const toSession = (s: Session | null): AuthSession => {
     if (!s?.access_token || !s.refresh_token || !s.user?.email) throw new AuthError("no session returned");
@@ -58,11 +70,15 @@ export function supabaseAuth(cfg: SupabaseAuthConfig): AuthProvider {
       return toSession(data.session);
     },
     async verifyAccessToken(accessToken) {
+      let alg: string | undefined;
+      try { alg = decodeProtectedHeader(accessToken).alg; } catch { return null; }
       try {
-        const { payload } = secret
-          ? await jwtVerify(accessToken, secret, { audience: "authenticated", issuer })
-          : await jwtVerify(accessToken, jwks, { audience: "authenticated", issuer });
-        return claimsOf(payload);
+        if (alg?.startsWith("HS")) {
+          // Legacy shared-secret project: verify locally when the secret is configured, otherwise ask Supabase.
+          if (!secret) return await remoteVerify(accessToken);
+          return claimsOf((await jwtVerify(accessToken, secret, { audience: "authenticated", issuer, algorithms: [alg] })).payload);
+        }
+        return claimsOf((await jwtVerify(accessToken, jwks, { audience: "authenticated", issuer })).payload);
       } catch {
         return null;
       }
