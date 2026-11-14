@@ -62,3 +62,14 @@ export function startScheduler(deps: AppDeps, everyMs = 60 * 1000): () => void {
   timer.unref?.();
   return () => clearInterval(timer);
 }
+
+/** Runs every job of one cadence in order. A job that throws is logged; the rest still run (each re-checks what is due). */
+export async function runCadence(deps: AppDeps, cadence: "hourly" | "nightly") {
+  const ran: ScheduledJobName[] = [];
+  for (const name of Object.keys(SCHEDULED_JOBS) as ScheduledJobName[]) {
+    if (CADENCE[name] !== cadence) continue;
+    try { await SCHEDULED_JOBS[name](deps); ran.push(name); }
+    catch (err) { console.error(`[jobs] ${name} failed:`, err); }
+  }
+  return ran;
+}

@@ -14,6 +14,8 @@ export interface AppConfig {
   db: Db; clock: Clock; transport: Transport; baseUrl: string; webhookSecret?: string;
   /** Sign-in: Supabase Auth in production (`auth/supabaseAuth.ts`), the in-memory fake in tests and offline dev. */
   auth: AuthProvider;
+  /** Enables GET /cron/:cadence (Vercel Cron) for callers presenting `Authorization: Bearer <cronSecret>`. */
+  cronSecret?: string;
   /** Sign-in link requests allowed per 15 minutes. Defaults: 5 per address, 30 per client IP. */
   linkLimits?: { perEmail?: number; perIp?: number };
   /** §7 stage 2. Without one, every role that passes the rules goes to human review: nothing is accepted unseen. */
@@ -42,8 +44,8 @@ export async function buildDeps(cfg: AppConfig): Promise<AppDeps> {
   const deps = {
     ...rest, ops, identity, notify: createNotify(cfg.db, cfg.transport),
     limits: {
-      linkPerEmail: rateLimiter(cfg.clock, linkLimits?.perEmail ?? 5, window),
-      linkPerIp: rateLimiter(cfg.clock, linkLimits?.perIp ?? 30, window),
+      linkPerEmail: rateLimiter(cfg.db, cfg.clock, "link:email", linkLimits?.perEmail ?? 5, window),
+      linkPerIp: rateLimiter(cfg.db, cfg.clock, "link:ip", linkLimits?.perIp ?? 30, window),
     },
     roles: createRoles(cfg.db, { clock: cfg.clock }),
     matching: createMatching(cfg.db, { clock: cfg.clock, scorer: cfg.scorer, candidates: identity }),

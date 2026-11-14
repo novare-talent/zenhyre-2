@@ -1,24 +1,25 @@
+import { sql } from "@zenhyre/db/orm";
+import type { Db } from "@zenhyre/db";
 import { Clock } from "@zenhyre/shared";
 
 /**
- * A fixed-window counter per key, in process memory. Enough for one API instance; move it to Postgres or Redis
- * before running more than one.
+ * A fixed-window counter per key, kept in Postgres (`zenhyre2.rate_limit`) so every API instance, serverless ones
+ * included, shares it. One atomic upsert per call: a new window resets the count, otherwise it increments.
  */
-export function rateLimiter(clock: Clock, limit: number, windowMs: number) {
-  const hits = new Map<string, { start: number; count: number }>();
+export function rateLimiter(db: Db, clock: Clock, scope: string, limit: number, windowMs: number) {
   return {
     /** True if this call is allowed (and counts it). */
-    take(key: string): boolean {
-      const now = clock.now().getTime();
-      const h = hits.get(key);
-      if (!h || now - h.start >= windowMs) {
-        hits.set(key, { start: now, count: 1 });
-        if (hits.size > 50_000) for (const [k, v] of hits) if (now - v.start >= windowMs) hits.delete(k);
-        return true;
-      }
-      if (h.count >= limit) return false;
-      h.count++;
-      return true;
+    async take(key: string): Promise<boolean> {
+      // ISO strings with explicit casts: the driver does not bind JS Dates in raw SQL.
+      const now = clock.now().toISOString();
+      const cutoff = new Date(clock.now().getTime() - windowMs).toISOString();
+      const rows = await db.execute(sql`
+        insert into zenhyre2.rate_limit (key, window_start, count) values (${`${scope}:${key}`}, ${now}::timestamptz, 1)
+        on conflict (key) do update set
+          count = case when zenhyre2.rate_limit.window_start <= ${cutoff}::timestamptz then 1 else zenhyre2.rate_limit.count + 1 end,
+          window_start = case when zenhyre2.rate_limit.window_start <= ${cutoff}::timestamptz then ${now}::timestamptz else zenhyre2.rate_limit.window_start end
+        returning count`);
+      return Number((rows as unknown as { count: number }[])[0]?.count ?? 1) <= limit;
     },
   };
 }

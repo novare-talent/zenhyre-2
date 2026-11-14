@@ -8,3 +8,4 @@ dist
 *.tsbuildinfo
 .shots
 .test-pg
+.vercel

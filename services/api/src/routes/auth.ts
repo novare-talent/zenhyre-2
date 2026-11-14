@@ -15,7 +15,7 @@ authRoutes.post("/auth/magic-link", async (c) => {
   const { auth, notify, baseUrl, limits } = c.var.deps;
   // The web app forwards the browser's address; a direct caller is limited by its own.
   const ip = c.req.header("x-zh-client-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  if (!limits.linkPerEmail.take(email) || !limits.linkPerIp.take(ip)) {
+  if (!(await limits.linkPerEmail.take(email)) || !(await limits.linkPerIp.take(ip))) {
     return c.json({ error: "rate_limited", message: "Too many sign-in links requested. Wait a few minutes and try again." }, 429);
   }
   const token = await auth.issueLinkToken(email);
