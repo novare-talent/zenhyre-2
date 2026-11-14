@@ -1,6 +1,6 @@
 // The gate's three stages, fee terms, and the guards on the company and candidate seats (spec §5, §7, §8).
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { fixtureGateModel, type GateRole } from "@zenhyre/gate";
 import { testApp } from "./helpers";

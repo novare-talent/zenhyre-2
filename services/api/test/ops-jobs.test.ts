@@ -1,7 +1,7 @@
 // Staff housekeeping around the hiring loop: merging duplicate companies (§6.4), the nightly status flip (§6.1) and the
 // interim scheduler that runs the §18 jobs.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { buildDeps } from "../src/context";
 import { SCHEDULED_JOBS, type ScheduledJobName } from "../src/jobs";

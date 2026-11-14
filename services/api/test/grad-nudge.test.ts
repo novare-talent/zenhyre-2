@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { testApp } from "./helpers";
 

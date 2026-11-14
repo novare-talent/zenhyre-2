@@ -72,7 +72,9 @@ The API runs on :4000 and the app on :3000. Things that catch people out:
 | `MAIL_FROM` | API | Default `Zenhyre <no-reply@zenhyre.com>` |
 | `RESEND_WEBHOOK_SECRET` | API | Verifies `POST /webhooks/resend` |
 | `GATE_MODEL` | API | `none` gives dev the production behaviour (see the gate below) |
-| `SCHEDULER` | API | `off` disables the in-process timer |
+| `JOB_RUNNER` | API | Default: pg-boss (schema `pgboss`, same database). `inline` = role jobs inside the request and scheduled jobs on the old in-process timer |
+| `PGBOSS_DATABASE_URL` | API | Optional separate connection for pg-boss (e.g. Supabase session pooler); defaults to `DATABASE_URL` |
+| `SCHEDULER` | API | `off` = do not register the hourly/nightly schedules (run jobs with `POST /admin/jobs/:name/run`) |
 | `NODE_ENV` | API | `production` turns off the dev gate fixture and the email log |
 | `API_URL` | Web app | Default `http://localhost:4000` |
 | `COOKIE_SECURE` | Web app | `1` or `0` overrides the automatic https detection |
@@ -176,6 +178,22 @@ An unlocked member of the role's company. Staff pass the access check on role ro
 
 Action stages: `viewed`, `interviewed`, `offered` (`offeredCtc`), `offer_accepted`, `offer_reneged`, `hired` (`hiredCtc`, `joinedOn` as YYYY-MM-DD), `rejected` (`rejectionCategory`, optional note), `did_not_join`, `left_early`. An out-of-order move is 409 `illegal_transition`, acting while a hire is recorded is 409 `not_actionable`, and a second hire is 409 `one_hire`.
 
+### Association
+
+An admin of the association (`association_admin`).
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /association/reviews` | | `{ items }`: open verification items for my association(s), oldest first, with name, campus, course, claimed batch and branch, LinkedIn |
+| `POST /association/reviews/:id/resolve` | `{ resolution, note? }` | `approve`, `reject` or `reject_fraud`; a reject needs a `note` (the reason the candidate sees). 403 for another association's item |
+
+### Notifications (any signed-in user)
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /me/notifications?unread=1&limit=` | | `{ unread, items }`, newest first, with the rendered title |
+| `POST /me/notifications/read` | `{ ids? }` | `{ marked }`; without `ids`, marks everything read |
+
 ### Staff
 
 Requires `user.is_staff`.
@@ -198,14 +216,14 @@ Requires `user.is_staff`.
 
 ## Scheduled jobs
 
-`services/api/src/scheduler.ts` runs these on a timer, hourly or nightly per §18, and all of them once at start-up:
+`services/api/src/pgboss.ts` runs background work on pg-boss (§3.2), in the `pgboss` schema of the same database:
 
-- **Hourly:** `role.close_broadcast`, `role.terms_auto_release`
-- **Nightly:** `role.terms_timeout`, `role.dark_check`, `role.join_prompt`, `role.join_grace`, `role.guarantee_expiry`, `candidate.status_flip`
+- **Role jobs** (`role.gate`, `role.broadcast`) are enqueued by workflows after commit: 3 attempts with exponential backoff; the final failure writes `Role.job_error` and opens an `alert` (§13).
+- **Scheduled jobs** run from two cron schedules (UTC), each in `SCHEDULED_JOBS` order. Schedules are cluster-safe, so several API instances still run each tick once.
+  - **Hourly:** `role.close_broadcast`, `role.terms_auto_release`
+  - **Nightly:** `role.terms_timeout`, `role.dark_check`, `role.join_prompt`, `role.join_grace`, `role.guarantee_expiry`, `candidate.status_flip`, `candidate.grad_nudge`
 
-The nightly order matters: prompt, then grace, then guarantee expiry. pg-boss is still the plan (§3.2) and replaces this file. The timer has no persistence and no retry backoff, and running two API instances would run every job twice.
-
-`role.gate` and `role.broadcast` are not on the timer. They go through the `JobQueue` interface in `jobs.ts`, and the default queue, `inlineJobs`, runs them right after commit and inside the request. So waiving a deposit sends up to `nudge_cap` emails before it responds.
+The nightly order matters: prompt, then grace, then guarantee expiry. `JOB_RUNNER=inline` keeps the old behaviour (role jobs inside the request, scheduled jobs on the in-process timer in `scheduler.ts`); the tests use the inline queue.
 
 ## Decisions worth knowing
 
@@ -225,10 +243,10 @@ The nightly order matters: prompt, then grace, then guarantee expiry. pg-boss is
 
 1. **Connect the seat pages to the API.** Roles, applications and shortlists read fixtures. The candidate seat shows this sample data with no "Sample" tag, unlike the company and association seats.
 2. **Staff console** (§12): gate, verification, join-dispute and alert queues, role transitions, fee terms, config. Today this is API only, and production depends on it because every role waits for staff.
-3. **Association routes.** `resolveVerification` accepts an association as the actor, but no route exposes the association's verification queue. Staff can resolve items through `/admin/reviews`.
-4. **In-app notifications.** Rows are written to `notification`, but no route reads them.
-5. **`candidate.grad_nudge` job.** It needs an identity query and a way not to nudge twice.
-6. **pg-boss,** replacing the interim timer and inline queue.
+3. ~~Association routes~~: done, `GET /association/reviews`, `POST /association/reviews/:id/resolve`.
+4. ~~In-app notifications~~: done, `GET /me/notifications`, `POST /me/notifications/read`.
+5. ~~`candidate.grad_nudge` job~~: done (once per offset, 7-day catch-up window).
+6. ~~pg-boss~~: done (`services/api/src/pgboss.ts`).
 7. **Candidate name and contact on the shortlist.** The `candidate` table has no name column, and the spec does not say how a company reaches a shortlisted candidate. Needs a product decision.
 8. **Smaller gaps:**
    - A company cannot open the shortlist of a `withdrawn` role.

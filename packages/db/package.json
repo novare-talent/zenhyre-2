@@ -8,7 +8,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./schema": "./dist/schema/index.js",
-    "./test": "./dist/test/setup.js"
+    "./test": "./dist/test/setup.js",
+    "./orm": "./dist/orm.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

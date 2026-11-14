@@ -1,7 +1,7 @@
 // A small world for workflow tests: a fresh database with one campus, staff, a company, and helpers that walk a role
 // to a given point through the real routes.
 import { expect } from "vitest";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq } from "@zenhyre/db/orm";
 import { schema } from "@zenhyre/db";
 import { fixtureGateModel, type GateRole } from "@zenhyre/gate";
 import { fixedScorer } from "@zenhyre/matching";
