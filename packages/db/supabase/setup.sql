@@ -11,6 +11,10 @@ begin
 end $$;
 -- Let `postgres` manage objects zenhyre_api owns (needed to run the schema creation below as postgres).
 grant zenhyre_api to postgres;
+-- Drizzle's migrator always runs `create schema if not exists` for its journal, and Postgres checks the database-level
+-- CREATE privilege before it checks whether the schema exists. This allows creating schemas only; it grants nothing
+-- on 1.0's tables in `public`.
+grant create on database postgres to zenhyre_api;
 
 -- 2. The schema. Migrations (`pnpm db:migrate`, run as zenhyre_api) create every table inside it.
 create schema if not exists zenhyre2 authorization zenhyre_api;
