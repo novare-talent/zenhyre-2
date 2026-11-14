@@ -1,7 +1,7 @@
 import PgBoss from "pg-boss";
 import type { AppDeps } from "./context";
-import { JobQueue, ROLE_JOBS, RoleJobName, runRoleJob, SCHEDULED_JOBS, ScheduledJobName } from "./jobs";
-import { CADENCE } from "./scheduler";
+import { JobQueue, ROLE_JOBS, RoleJobName, runRoleJob } from "./jobs";
+import { runCadence } from "./scheduler";
 
 /**
  * §3.2 / §13: background jobs on pg-boss, in the same Postgres (schema `pgboss`).
@@ -45,15 +45,4 @@ export async function startPgBoss(deps: AppDeps, connectionString: string, opts:
     enqueue: async (name, payload) => { await boss.send(queueOf(name), payload, { retryLimit: RETRY_LIMIT, retryBackoff: true, retryDelay: 30 }); },
   };
   return { boss, queue, stop: () => boss.stop({ graceful: true, timeout: 20_000 }) };
-}
-
-/** Runs every job of one cadence in order. A job that throws is logged; the rest still run (each re-checks what is due). */
-export async function runCadence(deps: AppDeps, cadence: "hourly" | "nightly") {
-  const ran: ScheduledJobName[] = [];
-  for (const name of Object.keys(SCHEDULED_JOBS) as ScheduledJobName[]) {
-    if (CADENCE[name] !== cadence) continue;
-    try { await SCHEDULED_JOBS[name](deps); ran.push(name); }
-    catch (err) { console.error(`[jobs] ${name} failed:`, err); }
-  }
-  return ran;
 }

@@ -1,4 +1,4 @@
-import { uuid, text, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, jsonb, uniqueIndex, integer } from "drizzle-orm/pg-core";
 import { z2 } from "./_schema";
 import { sql } from "drizzle-orm";
 
@@ -35,4 +35,11 @@ export const staffAction = z2.table("staff_action", {
   refId: text("ref_id").notNull(),
   note: text("note"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Fixed-window request counters (sign-in link limits). Shared by every API instance, including serverless ones. */
+export const rateLimit = z2.table("rate_limit", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
 });

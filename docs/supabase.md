@@ -58,3 +58,17 @@ If there is one, decide whether 2.0 users should appear in 1.0 (probably not): t
 ## Tests never touch Supabase
 
 `pnpm test` creates and drops throwaway databases on the server in `DATABASE_URL`. Point it at the local Postgres from `scripts/test-db.sh`, never at Supabase.
+
+## Deploying on Vercel
+
+Two Vercel projects from this repo, both in Singapore (`sin1`) next to the database:
+
+| Project | Root directory | Build |
+|---|---|---|
+| API | `services/api` | `scripts/build-vercel.mjs` writes a Build Output (one bundled function for every path, plus `/cron/hourly` and `/cron/nightly`) |
+| Web app | `apps/prototype` | Next.js |
+
+On Vercel the API runs role jobs inside the request (`JOB_RUNNER` is not used: there is no long-lived worker), Vercel Cron triggers the scheduled jobs with `CRON_SECRET`, and the sign-in link limits are kept in `zenhyre2.rate_limit`. Use the **transaction pooler** (port 6543) for `DATABASE_URL` there, with `DB_POOL_MAX=3`. Hourly crons need a Vercel Pro team; on Hobby, crons run at most once a day.
+
+API environment: `DATABASE_URL`, `DB_POOL_MAX`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET` (optional), `RESEND_API_KEY` (required in production), `MAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `APP_BASE_URL` (the web app's URL), `CRON_SECRET`, `NODE_ENV=production`.
+Web app environment: `API_URL` (the API project's URL).

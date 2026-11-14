@@ -15,6 +15,13 @@
       "when": 1794663943928,
       "tag": "0001_notification_feed_index",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794666366750,
+      "tag": "0002_rate_limit",
+      "breakpoints": true
     }
   ]
 }
