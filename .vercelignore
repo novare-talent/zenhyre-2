@@ -1,0 +1,16 @@
+# What the Vercel CLI must never upload (it does not read .gitignore).
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+.test-pg
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.vercel
+**/.shots
+**/*.tsbuildinfo
+.git
