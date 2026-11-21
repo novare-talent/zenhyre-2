@@ -123,7 +123,7 @@ function buildLedger(db: DbOrTx, clock: Clock) {
      * negative, and money in flight may not exceed what is held. The caller holds the role's lock. A repeat with the
      * same (type, external_ref) is a no-op and returns null, which makes webhook replays harmless.
      */
-    async record(e: { type: LedgerType; roleId: string; companyId: string; amount: Paise; tax?: Paise; matchId?: string | null;
+    async record(e: { type: LedgerType; roleId: string; amount: Paise; tax?: Paise; matchId?: string | null;
       paymentOrderId?: string | null; settlementId?: string | null; externalRef?: string | null; note?: string | null; createdBy: string }): Promise<LedgerEntry | null> {
       if (!Number.isInteger(e.amount) || e.amount <= 0) throw new Invalid(`ledger: ${e.type} needs a positive whole amount of paise`);
       const [row] = await db.insert(schema.ledgerEntry).values({ ...e, tax: e.tax ?? 0, createdAt: clock.now() })
@@ -178,7 +178,7 @@ function buildLedger(db: DbOrTx, clock: Clock) {
 
     // ---- invoices ----
     /** Issues the next number in the series for the current financial year and stores the invoice. */
-    async issueInvoice(i: { kind: Invoice["kind"]; roleId: string; companyId: string; paymentOrderId?: string | null; settlementId?: string | null;
+    async issueInvoice(i: { kind: Invoice["kind"]; roleId: string; paymentOrderId?: string | null; settlementId?: string | null;
       lines: InvoiceLine[]; taxable: Paise; cgst: Paise; sgst: Paise; igst: Paise; total: Paise; billing: BillingDetails; supplier: SupplierDetails }): Promise<Invoice> {
       const now = clock.now();
       const series = `${i.kind === "credit_note" ? "CN" : "INV"}/${financialYear(now)}`;

@@ -120,7 +120,7 @@ export async function checkout(deps: AppDeps, input: { roleId: string; user: Use
     const again = await w.m.ledger.activeOrder(role.id, input.purpose);
     if (again) return again;
     return w.m.ledger.insertOrder({
-      orderId, purpose: input.purpose, roleId: role.id, companyId: role.companyId, matchId: input.purpose === "fee" ? locked.hiredMatchId : null,
+      orderId, purpose: input.purpose, roleId: role.id, matchId: input.purpose === "fee" ? locked.hiredMatchId : null,
       taxable: amounts.taxable, gst: amounts.gst, total: amounts.total, provider: deps.gateway.provider,
       cfOrderId: created.cfOrderId, paymentSessionId: created.paymentSessionId, expiresAt, billing, createdBy: input.user.id, raw: created.raw });
   });
@@ -164,12 +164,12 @@ export async function paymentCaptured(deps: AppDeps, orderId: string, state: Ord
       await w.m.ops.openReview({ kind: "alert", refType: "payment_order", refId: order.orderId, associationId: null,
         payload: { reason: `paid ${pay.amount} paise, expected ${order.total}`, roleId: role.id } });
     }
-    const base = { roleId: role.id, companyId: role.companyId, paymentOrderId: order.id, externalRef: pay.cfPaymentId, createdBy: "gateway" };
+    const base = { roleId: role.id, paymentOrderId: order.id, externalRef: pay.cfPaymentId, createdBy: "gateway" };
     if (order.purpose === "deposit") {
       await w.m.ledger.record({ ...base, type: "deposit_received", amount: pay.amount, tax: order.gst, note: `Cashfree payment ${pay.cfPaymentId}` });
       const { supplier } = await taxConfig(w);
       const inv = await w.m.ledger.issueInvoice({
-        kind: "tax_invoice", roleId: role.id, companyId: role.companyId, paymentOrderId: order.id,
+        kind: "tax_invoice", roleId: role.id, paymentOrderId: order.id,
         lines: [{ description: `Refundable hiring deposit for the role "${role.title}"`, sac: supplier.sac, taxable: order.taxable }],
         ...taxSplit(order.taxable, order.gst, supplier.stateCode, order.billing.stateCode), total: order.total, billing: order.billing, supplier });
       if (role.status === "deposit_pending" && !role.depositMode) {
@@ -217,12 +217,12 @@ export async function raiseFeeTx(w: Wf, role: Role, match: Match) {
   const { rate } = await taxConfig(w);
   const gst = Math.round(feeTaxable * rate);
   const feeTotal = feeTaxable + gst;
-  await w.m.ledger.record({ type: "fee_due", roleId: role.id, companyId: role.companyId, matchId: match.id, amount: feeTotal, tax: gst,
+  await w.m.ledger.record({ type: "fee_due", roleId: role.id, matchId: match.id, amount: feeTotal, tax: gst,
     note: `${role.feeTerms.kind === "flat" ? "Flat fee" : `${(role.feeTerms.amount * 100).toFixed(1)}% of CTC ${money(match.hiredCtc)}`}`, createdBy: "system" });
   const b = await w.m.ledger.balances(role.id);
   const applied = Math.min(b.depositAvailable, feeTotal);
   if (applied > 0) {
-    await w.m.ledger.record({ type: "deposit_applied_to_fee", roleId: role.id, companyId: role.companyId, matchId: match.id, amount: applied, createdBy: "system",
+    await w.m.ledger.record({ type: "deposit_applied_to_fee", roleId: role.id, matchId: match.id, amount: applied, createdBy: "system",
       note: "Deposit applied to the success fee" });
   }
   const excess = b.depositAvailable - applied;
@@ -259,7 +259,7 @@ async function ensureFeeInvoice(w: Wf, role: Role, fee?: { feeTaxable: number; g
     f = { feeTaxable: due.amount - due.tax, gst: due.tax, hiredCtc: 0 };
   }
   return w.m.ledger.issueInvoice({
-    kind: "tax_invoice", roleId: role.id, companyId: role.companyId,
+    kind: "tax_invoice", roleId: role.id,
     lines: [{ description: `Success fee for the hire on the role "${role.title}"`, sac: supplier.sac, taxable: f.feeTaxable }],
     ...taxSplit(f.feeTaxable, f.gst, supplier.stateCode, billing.stateCode), total: f.feeTaxable + f.gst, billing, supplier });
 }
@@ -271,12 +271,12 @@ async function ensureFeeInvoice(w: Wf, role: Role, fee?: { feeTaxable: number; g
 export async function reverseFeeTx(w: Wf, role: Role, matchId: string) {
   const b = await w.m.ledger.balances(role.id);
   if (b.depositApplied > 0) {
-    await w.m.ledger.record({ type: "deposit_application_reversed", roleId: role.id, companyId: role.companyId, matchId, amount: b.depositApplied,
+    await w.m.ledger.record({ type: "deposit_application_reversed", roleId: role.id, matchId, amount: b.depositApplied,
       createdBy: "system", note: "Hire did not join: deposit held again" });
   }
   const after = await w.m.ledger.balances(role.id);
   if (after.feeOutstanding > 0) {
-    await w.m.ledger.record({ type: "fee_voided", roleId: role.id, companyId: role.companyId, matchId, amount: after.feeOutstanding,
+    await w.m.ledger.record({ type: "fee_voided", roleId: role.id, matchId, amount: after.feeOutstanding,
       createdBy: "system", note: "Hire did not join: fee voided" });
   }
   if (b.feePaid > 0) {
@@ -370,7 +370,7 @@ export async function processSettlement(deps: AppDeps, id: string): Promise<Sett
       if (s.kind === "forfeit") {
         // Out of "in flight" first, then booked: the ledger's check counts in-flight settlements against what is held.
         const done = await w.m.ledger.updateSettlement(s.id, { status: "succeeded", processedAt: deps.clock.now(), succeededAt: deps.clock.now() });
-        await w.m.ledger.record({ type: "deposit_forfeited", roleId: role.id, companyId: role.companyId, paymentOrderId: order.id, settlementId: s.id,
+        await w.m.ledger.record({ type: "deposit_forfeited", roleId: role.id, paymentOrderId: order.id, settlementId: s.id,
           amount: s.amount, externalRef: `settle:${s.id}`, note: s.reason, createdBy: s.requestedBy });
         await closeIfSettledTx(w, role);
         w.after(() => sendToCompany(deps, role.companyId, "deposit_forfeited", { roleTitle: role.title, amount: money(s.amount), reason: s.reason }));
@@ -414,7 +414,7 @@ export async function applyRefundState(deps: AppDeps, id: string, state: RefundS
     const order = (await w.m.ledger.orderById(s.paymentOrderId))!;
     const refunded = s.amount - s.gatewayFee;
     const ref = state.cfRefundId ?? s.cfRefundId ?? `settle:${s.id}`;
-    const base = { roleId: role.id, companyId: role.companyId, paymentOrderId: order.id, settlementId: s.id, createdBy: "gateway" };
+    const base = { roleId: role.id, paymentOrderId: order.id, settlementId: s.id, createdBy: "gateway" };
     const { rate, supplier } = await taxConfig(w);
     const split = splitGross(refunded, rate, supplier.stateCode, order.billing.stateCode);
     // Out of "in flight" first, then booked (see processSettlement).
@@ -422,7 +422,7 @@ export async function applyRefundState(deps: AppDeps, id: string, state: RefundS
     await w.m.ledger.record({ ...base, type: "deposit_refunded", amount: refunded, tax: split.gst, externalRef: ref, note: s.reason });
     if (s.gatewayFee > 0) await w.m.ledger.record({ ...base, type: "deposit_gateway_fee_retained", amount: s.gatewayFee, externalRef: `gwfee:${s.id}`, note: "Payment gateway charges" });
     const inv = await w.m.ledger.issueInvoice({
-      kind: "credit_note", roleId: role.id, companyId: role.companyId, paymentOrderId: order.id, settlementId: s.id,
+      kind: "credit_note", roleId: role.id, paymentOrderId: order.id, settlementId: s.id,
       lines: [{ description: `Refund of the hiring deposit for the role "${role.title}"`, sac: supplier.sac, taxable: split.taxable }],
       taxable: split.taxable, cgst: split.cgst, sgst: split.sgst, igst: split.igst, total: refunded, billing: order.billing, supplier });
     await closeIfSettledTx(w, role);
@@ -517,6 +517,7 @@ export async function invoicePdf(deps: AppDeps, inv: Invoice, extras: { status?:
 async function emailInvoice(deps: AppDeps, inv: Invoice, template: "deposit_paid" | "fee_raised" | "fee_paid" | "deposit_refunded",
   data: Record<string, unknown>, extras: { status?: string; reference?: string } = {}) {
   const pdf = await invoicePdf(deps, inv, extras);
-  await sendToCompany(deps, inv.companyId, template, { ...data, invoiceId: inv.id }, {
+  const { companyId } = await deps.roles.require(inv.roleId);
+  await sendToCompany(deps, companyId, template, { ...data, invoiceId: inv.id }, {
     attachments: [{ filename: `${inv.number.replace(/\//g, "-")}.pdf`, content: pdf }], billingEmail: inv.billing.email });
 }

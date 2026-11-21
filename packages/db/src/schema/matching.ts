@@ -1,4 +1,5 @@
-import { uuid, text, timestamp, integer, bigint, bigserial, boolean, date, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, integer, bigint, bigserial, boolean, date, jsonb, unique, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { z2 } from "./_schema";
 import { candidate } from "./identity";
 import { role } from "./roles";
@@ -37,6 +38,9 @@ export const match = z2.table("match", {
   unique("match_role_candidate_uq").on(t.roleId, t.candidateId),
   index("match_candidate_idx").on(t.candidateId),
   index("match_role_stage_idx").on(t.roleId, t.stage),
+  check("match_fit_score_ck", sql`fit_score between 0 and 100`),
+  check("match_rank_ck", sql`rank is null or rank > 0`),
+  check("match_ctc_ck", sql`(offered_ctc is null or offered_ctc > 0) and (hired_ctc is null or hired_ctc > 0)`),
 ]);
 
 /** Append-only. `from_stage` is null for the event that records the match being scored. */
@@ -53,4 +57,7 @@ export const matchEvent = z2.table("match_event", {
   actorKind: text("actor_kind").notNull(),
   data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("match_event_match_idx").on(t.matchId, t.seq)]);
+}, (t) => [
+  index("match_event_match_idx").on(t.matchId, t.seq),
+  check("match_event_actor_kind_ck", sql`actor_kind in ('candidate', 'company', 'staff', 'system')`),
+]);

@@ -53,12 +53,10 @@ export function createCompanyModule(db: DbOrTx, clock: Clock, opts: { freemailDo
     },
     /** Moves users (and, once the roles module exists, roles) to the survivor and deletes the absorbed company. */
     async mergeCompanies(input: { survivorId: string; absorbedId: string }) {
-      const users = await db.select().from(schema.companyUser).where(eq(schema.companyUser.companyId, input.absorbedId));
-      for (const u of users) {
-        // Locks belong to the absorbed company's history; the survivor's status governs from here.
-        await db.insert(schema.companyUser).values({ ...u, companyId: input.survivorId, role: "member", lockedAt: null }).onConflictDoNothing();
-      }
-      await db.delete(schema.companyUser).where(eq(schema.companyUser.companyId, input.absorbedId));
+      // A person belongs to one company (company_user_one_company_uq), so the absorbed company's people simply move.
+      // Locks belong to the absorbed company's history; the survivor's status governs from here.
+      await db.update(schema.companyUser).set({ companyId: input.survivorId, role: "member", lockedAt: null })
+        .where(eq(schema.companyUser.companyId, input.absorbedId));
       await db.delete(schema.company).where(eq(schema.company.id, input.absorbedId));
     },
   };

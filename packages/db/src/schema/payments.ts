@@ -1,8 +1,9 @@
-import { uuid, text, timestamp, bigint, integer, boolean, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { uuid, text, timestamp, bigint, integer, boolean, jsonb, index, uniqueIndex, check, unique, foreignKey } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { z2 } from "./_schema";
-import { company } from "./identity";
+import { company, user } from "./identity";
 import { role } from "./roles";
+import { match } from "./matching";
 
 /**
  * Payments (docs/superpowers/plans/2026-11-21-cashfree-deposits.md). Every amount is integer paise. `total` amounts
@@ -32,9 +33,13 @@ export const companyBilling = z2.table("company_billing", {
   stateCode: text("state_code").notNull(),
   phone: text("phone").notNull(),
   email: text("email").notNull(),
-  updatedBy: uuid("updated_by"),
+  updatedBy: uuid("updated_by").references(() => user.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, () => [
+  check("company_billing_state_code_ck", sql`state_code ~ '^[0-9]{2}$'`),
+  check("company_billing_phone_ck", sql`phone ~ '^[6-9][0-9]{9}$'`),
+  check("company_billing_gstin_ck", sql`gstin is null or gstin ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$'`),
+]);
 
 /** One checkout at Cashfree. A role may have several over time, but at most one active per purpose. */
 export const paymentOrder = z2.table("payment_order", {
@@ -43,8 +48,8 @@ export const paymentOrder = z2.table("payment_order", {
   orderId: text("order_id").notNull().unique(),
   purpose: paymentPurpose("purpose").notNull(),
   roleId: uuid("role_id").notNull().references(() => role.id),
-  companyId: uuid("company_id").notNull().references(() => company.id),
-  matchId: uuid("match_id"),
+  // The company is the role's (role.company_id): not repeated here, so a company merge cannot leave it stale.
+  matchId: uuid("match_id").references(() => match.id),
   taxable: bigint("taxable", { mode: "number" }).notNull(),
   gst: bigint("gst", { mode: "number" }).notNull(),
   total: bigint("total", { mode: "number" }).notNull(),
@@ -58,12 +63,15 @@ export const paymentOrder = z2.table("payment_order", {
   paidAt: timestamp("paid_at", { withTimezone: true }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   billing: jsonb("billing").$type<BillingDetails>().notNull(),
-  createdBy: uuid("created_by"),
+  createdBy: uuid("created_by").references(() => user.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   raw: jsonb("raw").$type<Record<string, unknown>>(),
 }, (t) => [
   index("payment_order_role_idx").on(t.roleId),
+  // Lets settlements and ledger entries reference (order, role) together, so their role always matches the order's.
+  unique("payment_order_id_role_uq").on(t.id, t.roleId),
+  check("payment_order_currency_ck", sql`currency = 'INR'`),
   uniqueIndex("payment_order_active_uq").on(t.roleId, t.purpose).where(sql`status = 'active'`),
   uniqueIndex("payment_order_cf_payment_uq").on(t.cfPaymentId),
   check("payment_order_total_ck", sql`total > 0 and total = taxable + gst`),
@@ -95,7 +103,9 @@ export const depositSettlement = z2.table("deposit_settlement", {
   succeededAt: timestamp("succeeded_at", { withTimezone: true }),
 }, (t) => [
   index("deposit_settlement_role_idx").on(t.roleId),
-  index("deposit_settlement_status_idx").on(t.status),
+  // The worker's queue: only rows still to do (a full status index would mostly index finished ones).
+  index("deposit_settlement_pending_idx").on(t.status).where(sql`status in ('requested', 'processing')`),
+  foreignKey({ name: "deposit_settlement_order_role_fk", columns: [t.paymentOrderId, t.roleId], foreignColumns: [paymentOrder.id, paymentOrder.roleId] }),
   check("deposit_settlement_amount_ck", sql`amount > 0 and gateway_fee >= 0 and gateway_fee < amount`),
 ]);
 
@@ -104,8 +114,8 @@ export const ledgerEntry = z2.table("ledger_entry", {
   id: uuid("id").primaryKey().defaultRandom(),
   type: ledgerType("type").notNull(),
   roleId: uuid("role_id").notNull().references(() => role.id),
-  companyId: uuid("company_id").notNull().references(() => company.id),
-  matchId: uuid("match_id"),
+  // The company is the role's (role.company_id).
+  matchId: uuid("match_id").references(() => match.id),
   paymentOrderId: uuid("payment_order_id").references(() => paymentOrder.id),
   settlementId: uuid("settlement_id").references(() => depositSettlement.id),
   amount: bigint("amount", { mode: "number" }).notNull(),
@@ -119,6 +129,7 @@ export const ledgerEntry = z2.table("ledger_entry", {
   index("ledger_entry_role_idx").on(t.roleId, t.type),
   uniqueIndex("ledger_entry_ref_uq").on(t.type, t.externalRef).where(sql`external_ref is not null`),
   check("ledger_entry_amount_ck", sql`amount > 0 and tax >= 0 and tax <= amount`),
+  foreignKey({ name: "ledger_entry_order_role_fk", columns: [t.paymentOrderId, t.roleId], foreignColumns: [paymentOrder.id, paymentOrder.roleId] }),
 ]);
 
 export interface InvoiceLine { description: string; sac: string; taxable: number }
@@ -130,7 +141,7 @@ export const invoice = z2.table("invoice", {
   number: text("number").notNull().unique(),
   kind: invoiceKind("kind").notNull(),
   roleId: uuid("role_id").notNull().references(() => role.id),
-  companyId: uuid("company_id").notNull().references(() => company.id),
+  // Who was billed is the `billing` snapshot; the company is the role's.
   paymentOrderId: uuid("payment_order_id").references(() => paymentOrder.id),
   settlementId: uuid("settlement_id").references(() => depositSettlement.id),
   lines: jsonb("lines").$type<InvoiceLine[]>().notNull(),
@@ -146,13 +157,14 @@ export const invoice = z2.table("invoice", {
   index("invoice_role_idx").on(t.roleId),
   uniqueIndex("invoice_order_kind_uq").on(t.paymentOrderId, t.kind).where(sql`settlement_id is null`),
   uniqueIndex("invoice_settlement_uq").on(t.settlementId),
+  check("invoice_total_ck", sql`taxable >= 0 and cgst >= 0 and sgst >= 0 and igst >= 0 and total = taxable + cgst + sgst + igst`),
 ]);
 
 /** Gap-free numbering: `INV/2026-27` → last number issued in that series. */
 export const invoiceCounter = z2.table("invoice_counter", {
   series: text("series").primaryKey(),
   last: integer("last").notNull().default(0),
-});
+}, () => [check("invoice_counter_last_ck", sql`last >= 0`)]);
 
 /** Every gateway webhook as received. `dedupe_key` makes a replay a no-op. */
 export const paymentWebhookEvent = z2.table("payment_webhook_event", {

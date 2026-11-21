@@ -28,7 +28,7 @@ describe("withdraw (§5: any open state, by the company or staff)", () => {
       expect((await w.events(id)).at(-1)).toMatchObject({ fromStatus: status, toStatus: "withdrawn", actor: w.ceo.userId, note: "Hiring freeze." });
       expect(w.subjects(w.ceo).filter((s) => s === `Role closed: ${title}`)).toHaveLength(1);
       // Slice 1 holds no deposit: resolving it wrote nothing and left the role where the withdrawal put it.
-      expect(await w.row(id)).toMatchObject({ status: "withdrawn", refundOwed: null });
+      expect(await w.row(id)).toMatchObject({ status: "withdrawn" });
     });
   }
 
@@ -291,7 +291,7 @@ describe("role.dark_check (§5: no hire 30 days after the shortlist)", () => {
     w.t.clock.advance(MINUTE);
     expect(await w.runJob("role.dark_check")).toMatchObject({ roles: 1 });
     // No deposit is held in Slice 1, so the role passes through `closing` to `closed` in one step.
-    expect(await w.row(dark.id)).toMatchObject({ status: "closed", hiredMatchId: null, depositMode: "waived", refundOwed: null, jobError: null });
+    expect(await w.row(dark.id)).toMatchObject({ status: "closed", hiredMatchId: null, depositMode: "waived", jobError: null });
     expect((await w.events(dark.id)).slice(-2).map((e) => [e.fromStatus, e.toStatus, e.actor, e.note])).toEqual([
       ["shortlist_ready", "closing", "system", "no hire 30 days after the shortlist"], ["closing", "closed", "system", "no deposit held"]]);
     expect(await w.stages(dark.id, a, b, c, d)).toEqual(["role_closed", "rejected", "role_closed", "role_closed"]);

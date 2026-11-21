@@ -43,6 +43,13 @@
       "when": 1795275962820,
       "tag": "0005_user_person_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795277413377,
+      "tag": "0006_optimise_constraints_indexes",
+      "breakpoints": true
     }
   ]
 }

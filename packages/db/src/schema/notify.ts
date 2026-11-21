@@ -1,9 +1,10 @@
 import { uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { z2 } from "./_schema";
+import { user } from "./identity";
 export const notifyChannel = z2.enum("notify_channel", ["email", "in_app"]);
 export const notification = z2.table("notification", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => user.id),
   template: text("template").notNull(),
   data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
   channel: notifyChannel("channel").notNull(),

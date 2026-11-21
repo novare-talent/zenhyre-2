@@ -19,14 +19,14 @@ export interface RoleContent {
 }
 /** Non-status fields workflows keep on the role. Status only ever changes through `transition`. */
 export interface RoleBookkeeping {
-  depositAmount: number | null; depositOrderId: string | null; refundOwed: number | null;
+  depositAmount: number | null;
   broadcastClosesAt: Date; broadcastExtendedAt: Date | null;
   shortlistCap: number; nudgeCap: number; jobError: string | null;
 }
 export type RolePatch = Partial<RoleContent> & Partial<RoleBookkeeping>;
 
 const CONTENT_KEYS = ["title", "jd", "type", "ctcMin", "ctcMax", "yearsExpMin", "yearsExpMax", "locations", "campusReach"] as const;
-const BOOKKEEPING_KEYS = ["depositAmount", "depositOrderId", "refundOwed", "broadcastClosesAt", "broadcastExtendedAt", "shortlistCap", "nudgeCap", "jobError"] as const;
+const BOOKKEEPING_KEYS = ["depositAmount", "broadcastClosesAt", "broadcastExtendedAt", "shortlistCap", "nudgeCap", "jobError"] as const;
 
 /** Data some moves need. `transition` refuses the move when its data is missing. */
 export interface TransitionOpts {
