@@ -8,7 +8,7 @@ const LEGAL: Array<[RoleStatus, RoleStatus, ActorKind[]]> = [
   ["gated", "rejected", ["system", "staff"]],
   ["rejected", "gated", ["company", "staff"]],
   ["terms_pending", "deposit_pending", ["company", "staff"]],
-  ["deposit_pending", "broadcast", ["staff"]],
+  ["deposit_pending", "broadcast", ["staff", "system"]],
   ["broadcast", "shortlist_ready", ["system", "staff"]],
   ["shortlist_ready", "closing", ["company", "staff", "system"]],
   ["closing", "shortlist_ready", ["company", "staff", "system"]],
@@ -42,7 +42,7 @@ describe("role lifecycle table (§5)", () => {
   });
   it("a company can never waive its own deposit, decide its own gate or close a role itself", () => {
     expect(canTransition("deposit_pending", "broadcast", "company")).toBe(false);
-    expect(canTransition("deposit_pending", "broadcast", "system")).toBe(false);
+    expect(canTransition("deposit_pending", "broadcast", "system")).toBe(true); // only on a paid deposit (service.transition checks)
     expect(canTransition("gated", "terms_pending", "company")).toBe(false);
     expect(canTransition("closing", "closed", "company")).toBe(false);
   });

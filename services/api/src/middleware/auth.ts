@@ -19,7 +19,7 @@ export const sessionUser: MiddlewareHandler<{ Variables: Vars }> = async (c, nex
     // Usually the user exists already (POST /auth/redeem creates it); a token minted elsewhere still works.
     user = await identity.getUser(claims.sub) ?? (await identity.ensureUser({ id: claims.sub, email: claims.email })).user;
   }
-  c.set("user", user ? { id: user.id, isStaff: user.isStaff } : null);
+  c.set("user", user ? { id: user.id, isStaff: user.isStaff, isFinance: user.isStaff && user.isFinance } : null);
   await next();
 };
 export const requireUser: MiddlewareHandler<{ Variables: Vars }> = async (c, next) => {
@@ -28,5 +28,10 @@ export const requireUser: MiddlewareHandler<{ Variables: Vars }> = async (c, nex
 };
 export const requireStaff: MiddlewareHandler<{ Variables: Vars }> = async (c, next) => {
   if (!c.var.user?.isStaff) throw new Forbidden("staff only");
+  await next();
+};
+/** Staff with finance access (`user.is_finance`): the payments console. */
+export const requireFinance: MiddlewareHandler<{ Variables: Vars }> = async (c, next) => {
+  if (!c.var.user?.isStaff || !c.var.user.isFinance) throw new Forbidden("finance access only");
   await next();
 };

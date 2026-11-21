@@ -17,7 +17,7 @@ export async function darkCheck(deps: AppDeps, input: { roleId: string }) {
       && role.shortlistReadyAt.getTime() + days * DAY_MS <= deps.clock.now().getTime();
     if (!due) return { abandoned: false as const };
     const closing = await w.m.roles.transition(role.id, "closing", SYSTEM, `no hire ${days} days after the shortlist`);
-    const out = await resolveDepositTx(w, { role: closing, note: "no deposit held" });
+    const out = await resolveDepositTx(w, { role: closing, note: "no deposit held", reason: `No hire within ${days} days of the shortlist` });
     return { abandoned: true as const, role: out.role };
   });
 }

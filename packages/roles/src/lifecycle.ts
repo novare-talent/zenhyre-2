@@ -21,14 +21,14 @@ const ANYONE: readonly ActorKind[] = ["company", "staff", "system"];
 
 /**
  * Every legal move and who may make it. Anything not listed is illegal.
- * `deposit_pending → broadcast` is staff-only in Slice 1 (the waiver); Slice 2 adds `system` for Razorpay's payment.captured.
+ * `deposit_pending → broadcast`: staff by the waiver, or `system` when the gateway confirms the deposit is paid.
  */
 export const TRANSITIONS: Readonly<Record<RoleStatus, Partial<Record<RoleStatus, readonly ActorKind[]>>>> = {
   draft: { gated: ["company", "staff"], withdrawn: ANYONE },
   gated: { terms_pending: ["system", "staff"], rejected: ["system", "staff"], withdrawn: ANYONE },
   rejected: { gated: ["company", "staff"] },
   terms_pending: { deposit_pending: ["company", "staff"], withdrawn: ANYONE },
-  deposit_pending: { broadcast: ["staff"], withdrawn: ANYONE },
+  deposit_pending: { broadcast: ["staff", "system"], withdrawn: ANYONE },
   broadcast: { shortlist_ready: ["system", "staff"], withdrawn: ANYONE },
   shortlist_ready: { closing: ANYONE, withdrawn: ANYONE },
   closing: { shortlist_ready: ANYONE, closed: ["system", "staff"] },

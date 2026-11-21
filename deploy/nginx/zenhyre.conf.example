@@ -1,0 +1,53 @@
+# Zenhyre behind nginx on one host (not AWS-specific). Only the Next.js web app is public; the API listens on
+# 127.0.0.1:4000 (HOST=127.0.0.1) and is reached only by the web app's route handlers. All secrets (Supabase service
+# key, Resend key, Cashfree App ID + Secret Key) live in the API's environment, never in the web app or the browser.
+#
+#   web app:  API_URL=http://127.0.0.1:4000  pnpm --filter @zenhyre/prototype start   (port 3000)
+#   API:      HOST=127.0.0.1 NODE_ENV=production PAYMENT_PROVIDER=cashfree ... pnpm --filter @zenhyre/api start
+#
+# Cashfree reaches us at https://<domain>/api/webhooks/cashfree (the web app forwards the raw body to the API).
+# Register that URL in the Cashfree dashboard and whitelist <domain> for checkout.
+
+upstream zenhyre_web { server 127.0.0.1:3000; keepalive 32; }
+
+server {
+  listen 80;
+  server_name zenhyre.example.com;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name zenhyre.example.com;
+  ssl_certificate     /etc/letsencrypt/live/zenhyre.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/zenhyre.example.com/privkey.pem;
+
+  client_max_body_size 2m;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  location / {
+    proxy_pass http://zenhyre_web;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    # Overwrite (never append) what the client sent: the app trusts these for same-origin checks and the per-IP
+    # sign-in rate limit.
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 60s;
+  }
+
+  # Cashfree webhooks: no buffering surprises, raw body passed through untouched.
+  location = /api/webhooks/cashfree {
+    proxy_pass http://zenhyre_web;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_request_buffering on;
+  }
+
+  # The API is never exposed: there is deliberately no location proxying to 127.0.0.1:4000.
+}

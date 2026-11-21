@@ -7,6 +7,8 @@ export function rulesFromConfig(): Rules {
   const d = <K extends keyof typeof CONFIG>(k: K): (typeof CONFIG)[K]["default"] => CONFIG[k].default;
   return {
     depositTiers: d("deposit.tiers").map((t) => ({ maxCampuses: t.max_campuses, amount: t.amount })),
+    depositCtcSlabs: d("deposit.ctc_slabs").map((s) => ({ ctcFrom: s.ctc_from, ctcTo: s.ctc_to, amount: s.amount })),
+    gstRate: d("gst.rate"),
     engagedThreshold: d("deposit.engaged_threshold"),
     darkDays: d("deposit.dark_days"),
     internFlat: d("fee.intern_flat"),

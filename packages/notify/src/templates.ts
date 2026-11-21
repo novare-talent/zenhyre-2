@@ -28,6 +28,18 @@ export const TEMPLATES = {
   hire_recorded: { channels: both, subject: (d) => `Hire recorded: ${d.roleTitle}`, text: () => "Thanks. We'll confirm joining with the candidate." },
   role_closed: { channels: both, subject: (d) => `Role closed: ${d.roleTitle}`, text: () => "" },
   replacement_created: { channels: both, subject: (d) => `Replacement search started: ${d.roleTitle}`, text: () => "" },
+  // Payments. Amounts arrive formatted ("₹23,600.00"); each email carries its GST invoice or credit note as a PDF.
+  deposit_paid: { channels: both, subject: (d) => `Deposit received: ${d.roleTitle}`,
+    text: (d) => `We received your deposit of ${d.total} (${d.taxable} + GST ${d.gst}) for ${d.roleTitle}. The role is now live to candidates. Invoice ${d.invoiceNumber} is attached.
+${d.url}` },
+  fee_raised: { channels: both, subject: (d) => `Success fee for ${d.roleTitle}: ${d.outstanding} to pay`,
+    text: (d) => `Your hire for ${d.roleTitle} is recorded. Success fee ${d.feeTotal} (${d.feeTaxable} + GST ${d.feeGst}). Deposit adjusted: ${d.applied}. Balance payable: ${d.outstanding}. The ${d.guaranteeDays}-day replacement guarantee has started. Pay securely here: ${d.url}
+Invoice ${d.invoiceNumber} is attached.` },
+  fee_paid: { channels: both, subject: (d) => `Payment received: ${d.roleTitle}`,
+    text: (d) => `We received ${d.total} towards the success fee for ${d.roleTitle}. Nothing more is due. Receipt for invoice ${d.invoiceNumber} is attached.` },
+  deposit_refunded: { channels: both, subject: (d) => `Deposit refunded: ${d.roleTitle}`,
+    text: (d) => `We refunded ${d.refunded} of your deposit for ${d.roleTitle}${d.gatewayFee ? ` (deposit ${d.amount}, less payment gateway charges ${d.gatewayFee})` : ""}. Banks usually credit refunds within 5–7 working days. Credit note ${d.invoiceNumber} is attached.` },
+  deposit_forfeited: { channels: both, subject: (d) => `Deposit forfeited: ${d.roleTitle}`, text: (d) => `${d.amount} of the deposit for ${d.roleTitle} has been forfeited. Reason: ${d.reason}` },
   staff_alert: { channels: both, subject: (d) => `[alert] ${d.title}`, text: (d) => d.detail ?? "" },
 } satisfies Record<string, Template>;
 export type TemplateName = keyof typeof TEMPLATES;

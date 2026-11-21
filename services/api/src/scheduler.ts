@@ -10,6 +10,7 @@ import { SCHEDULED_JOBS, type ScheduledJobName } from "./jobs";
 export const CADENCE: Record<ScheduledJobName, "hourly" | "nightly"> = {
   "role.close_broadcast": "hourly",
   "role.terms_auto_release": "hourly",
+  "payment.reconcile": "hourly",
   "role.terms_timeout": "nightly",
   "role.dark_check": "nightly",
   "role.join_prompt": "nightly",
