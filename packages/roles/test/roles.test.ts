@@ -126,7 +126,8 @@ describe("every move against the database", () => {
         if (from === "terms_pending") await roles.releaseTerms(r.id);
         const before = (await roles.events(r.id)).length;
         clock.advance(1000);
-        const attempt = roles.transition(r.id, to, actors[kind], "note", opts);
+        // The system's only way into broadcast is a paid deposit.
+        const attempt = roles.transition(r.id, to, actors[kind], "note", { ...opts, depositPaid: kind === "system" });
         if (canTransition(from, to, kind)) {
           expect((await attempt).status, `${from} → ${to} by ${kind}`).toBe(to);
           expect((await roles.events(r.id)).at(-1)).toMatchObject({ fromStatus: from, toStatus: to });
@@ -234,7 +235,7 @@ describe("fee terms (§7)", () => {
   });
 });
 
-describe("deposit waiver (§5, Slice 1: deposit_mode = waived only)", () => {
+describe("deposit waiver (§5: deposit_mode = waived)", () => {
   it("needs a staff actor and a note, and opens the broadcast window", async () => {
     const r = await roleAt("deposit_pending");
     await expect(roles.waiveDeposit(r.id, company, "let us in", { broadcastDays: 10 })).rejects.toBeInstanceOf(IllegalTransition);
@@ -247,6 +248,13 @@ describe("deposit waiver (§5, Slice 1: deposit_mode = waived only)", () => {
     expect(b).toMatchObject({ status: "broadcast", depositMode: "waived" });
     expect(b.broadcastOpensAt).toEqual(clock.now());
     expect(b.broadcastClosesAt).toEqual(new Date(clock.now().getTime() + 10 * DAY));
+  });
+  it("a paid deposit opens the broadcast as the system, with deposit_mode = cashfree", async () => {
+    const r = await roleAt("deposit_pending");
+    await expect(roles.transition(r.id, "broadcast", staff, "paid?", { broadcastDays: 10, depositPaid: true })).rejects.toThrow(/payment confirmation/);
+    const b = await roles.depositPaid(r.id, { broadcastDays: 10, note: "deposit paid: cfp_1" });
+    expect(b).toMatchObject({ status: "broadcast", depositMode: "cashfree" });
+    expect((await roles.events(r.id)).at(-1)).toMatchObject({ fromStatus: "deposit_pending", toStatus: "broadcast", actor: "system" });
   });
   it("finds broadcasts whose window has ended", async () => {
     const r = await roleAt("broadcast");

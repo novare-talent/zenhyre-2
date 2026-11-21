@@ -1,7 +1,7 @@
 # Cashfree deposits: plan
 
 **Date:** 2026-11-21
-**Status:** Draft. Waiting on the owner's answers (§10) and the sandbox credentials (§9).
+**Status:** Built 2026-11-21 (see §11 "As built"). Waiting only on the sandbox credentials (§9) for a live test.
 **Replaces:** Razorpay in spec §3.2, §9.1 and §13. The rest of the ledger design in §4.4 and §9 stays; only the gateway changes.
 
 ## 1. What we are building
@@ -117,7 +117,7 @@ Company (browser)            Web app (Next.js)                 API (Hono)       
   - If an order is still active and not expired, it is returned. Otherwise a new one is created, with `order_id = dep_<role uuid without dashes>_<n>`.
   - The request sends `order_amount` in rupees with two decimals (paise / 100) and `order_currency = INR`.
   - It sends `customer_details` (company user id, email, name and **phone**; Cashfree requires the phone, see Q5).
-  - It sends `order_meta.return_url = APP_BASE_URL/company/roles/:id?order_id={order_id}` and `order_meta.notify_url = API_PUBLIC_URL/webhooks/cashfree`.
+  - It sends `order_meta.return_url = APP_BASE_URL/company/roles/:id?order_id={order_id}` and `order_meta.notify_url = APP_BASE_URL/api/webhooks/cashfree` (the public web app, which forwards to the private API).
   - It sends `order_expiry_time = now + CASHFREE_ORDER_EXPIRY_MINUTES`.
   - The Cashfree call runs **before** the database transaction, and the row is written after it succeeds. That keeps a slow HTTP call out of a locked transaction (spec §3.3). A retry reuses the same `order_id`, so it is idempotent.
 - **`depositCaptured` workflow**, from the webhook or a status check:
@@ -187,7 +187,7 @@ select status, cf_refund_id, failure_reason from zenhyre2.deposit_settlement whe
 
 - **Company role page** (`apps/prototype/src/app/company/roles/[id]/RolePage.tsx`):
   - In `deposit_pending`, the "Novare collects the deposit" placeholder becomes a **Pay ₹X deposit** button.
-  - The button asks for a phone number if we don't have one, calls the new handler, and opens Cashfree checkout with the JS SDK v3 (`https://sdk.cashfree.com/js/v3/cashfree.js`, `mode` from `NEXT_PUBLIC_CASHFREE_MODE`).
+  - The button asks for a phone number if we don't have one, calls the new handler, and opens Cashfree checkout with the JS SDK v3 (`https://sdk.cashfree.com/js/v3/cashfree.js`, `mode` returned by the API with each checkout).
   - On return, the page shows "Confirming payment…" and polls until the role is live.
   - It also shows the paid receipt (payment id, amount, date) and refund status later.
 - **New route handler** `src/app/api/pay/roles/[id]/deposit/route.ts`:
@@ -237,3 +237,40 @@ Never paste the secret key into chat, a commit or the web app. It goes only into
 - **Q5. Phone number.** Cashfree requires a customer phone on every order, and we don't store one today. Should we ask for it at checkout and save it on the company user (recommended), or use one company billing phone set by staff?
 - **Q6. Receipts and GST.** Is a payment receipt email enough for a refundable security deposit, or do you need a GST invoice for it? This needs the finance or CA view and the invoicing entity (Novare Talent Private Limited?).
 - **Q7. Forfeits.** Should forfeits always need a staff click (spec), or may a database or rule trigger forfeit on its own?
+
+## 11. As built (2026-11-21), with the owner's answers
+
+**Answers that shaped it.**
+
+- **Q1:** pay after the gate and terms.
+- **Q2:** reference slabs of ₹1,000 per LPA of `ctc_max`, stepped from ₹5k (base, up to 10 LPA) to ₹2L (2 Cr and above), in config `deposit.ctc_slabs`, which staff can edit at `/staff/config`. A role with no CTC falls back to the campus tiers.
+- **Q3:**
+  - There is no refund while the role is live.
+  - A role that ends with no hire (`deposit.dark_days` after its shortlist) is refunded automatically (`deposit.auto_refund_no_hire`).
+  - A role withdrawn after going live waits for finance (a `deposit_resolution` item).
+  - On a hire, the fee plus GST is raised and the deposit applied to it. Any deposit beyond the fee is refunded. The company is emailed the balance with a pay link (`/company/roles/:id?pay=fee`) and pays through Cashfree.
+  - When a hire does not join, the applied deposit is held again and the unpaid fee is voided.
+- **Q4:** refunds are the amount less Cashfree's charge. The charge comes from Cashfree's settlement data, or is estimated as `payment.gateway_fee_rate` (1.95%) plus GST on it. It is retained once per payment, and finance can untick it. Every payment is the price plus 18% GST (`gst.rate`), shown as CGST+SGST or IGST.
+- **Q5:** billing details and a phone number are asked for at the first checkout and stored in `company_billing`.
+- **Q6:** every payment, fee and refund email carries a GST tax invoice or credit-note PDF, numbered `NT/INV/<FY>/00001` or `NT/CN/<FY>/00001`. The supplier details are in config `invoice.supplier`: fill in Novare's GSTIN and address.
+- **Q7:** forfeits only come from finance (console or SQL), never from a rule.
+
+**Where it lives.**
+
+| | |
+|---|---|
+| Schema and migration | `packages/db/src/schema/payments.ts`, `drizzle/0003_cashfree_payments.sql` (append-only ledger trigger, `deposit_available()`, `request_deposit_settlement()`, NOTIFY trigger), `user.is_finance` |
+| Ledger, gateway, GST, PDF | `packages/ledger` (`cashfreeGateway`, `fakeGateway`, `addGst`, `renderInvoicePdf`) |
+| Workflows | `services/api/src/workflows/payments.ts`, hooked into `acceptTerms`, `recordHire`, `didNotJoin`, `resolveDeposit`, `withdrawRole` |
+| API | `routes/payments.ts` (company), `routes/adminPayments.ts` (finance), `POST /webhooks/cashfree`, job `payment.reconcile` |
+| Worker | `index.ts`: LISTEN `deposit_settlement`, plus a 1-minute sweep (`PAYMENTS_WORKER=off` disables it) |
+| Web | `company/roles/[id]` (deposit sheet, fee, history, billing dialog), `company/roles/[id]/pay` (fake checkout, dev only), `staff/payments` (finance console), `api/webhooks/cashfree` (forwards to the API), `api/pay/*` (invoice PDFs) |
+| Hosting | `deploy/nginx/zenhyre.conf.example`: only the web app is public; the API binds to 127.0.0.1 and holds every secret |
+
+**Finance access:**
+
+```sql
+update zenhyre2."user" set is_finance = true where id = (select user_id from zenhyre2.user_email where email = 'you@novaretalent.com');
+```
+
+The user must also be staff (`is_staff`).

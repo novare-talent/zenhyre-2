@@ -24,6 +24,7 @@ export default async function Layout({ children }: { children: ReactNode }) {
           { href: "/staff", label: "Queues" },
           { href: "/staff/roles", label: "Roles" },
           { href: "/staff/config", label: "Config" },
+          ...(s.me.user.isFinance ? [{ href: "/staff/payments", label: "Payments" }] : []),
         ]} />
         {children}
       </main>

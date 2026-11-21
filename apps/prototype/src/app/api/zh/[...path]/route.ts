@@ -5,10 +5,12 @@ import { apiFetch, COOKIE, sameOrigin } from "@/lib/session";
  * Same-origin proxy for the seat APIs: the browser calls /api/zh/<path> and this forwards it to the API with the
  * HTTP-only session cookie. Only the seat-facing route groups are reachable; auth, admin and webhooks are not.
  */
-const ALLOWED = [/^\/companies\/[^/]+\/roles(\/|$)/, /^\/roles\//, /^\/matches\//, /^\/me\/(roles|applications|notifications)(\/|$)/, /^\/association\/reviews(\/|$)/];
+const ALLOWED = [/^\/companies\/[^/]+\/roles(\/|$)/, /^\/companies\/[^/]+\/billing$/, /^\/roles\//, /^\/matches\//, /^\/me\/(roles|applications|notifications)(\/|$)/, /^\/association\/reviews(\/|$)/];
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
+  // No dot segments: `fetch` would normalise /roles/../admin into /admin and walk past the allowlist.
+  if (path.some((p) => p === "." || p === ".." || p === "")) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const target = "/" + path.map(encodeURIComponent).join("/");
   if (!ALLOWED.some((re) => re.test(target))) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (req.method !== "GET" && !sameOrigin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });

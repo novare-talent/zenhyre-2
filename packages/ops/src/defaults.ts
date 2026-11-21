@@ -1,11 +1,32 @@
 import { z } from "zod";
 
 const tier = z.object({ max_campuses: z.number().int().positive(), amount: z.number().int().positive() });
+const ctcSlab = z.object({ ctc_from: z.number().int().nonnegative(), ctc_to: z.number().int().positive().nullable(), amount: z.number().int().positive() });
+const LPA = 100_000 * 100;
+/** A CTC band in lakhs per annum and a deposit in rupees, stored as paise. */
+const slab = (fromLpa: number, toLpa: number | null, rupees: number) => ({ ctc_from: fromLpa * LPA, ctc_to: toLpa === null ? null : toLpa * LPA, amount: rupees * 100 });
+const supplier = z.object({
+  legalName: z.string(), gstin: z.string(), address: z.string(), state: z.string(), stateCode: z.string().regex(/^\d{2}$/), email: z.string(), sac: z.string() });
 
 export const CONFIG = {
   "deposit.tiers": { schema: z.array(tier), default: [
     { max_campuses: 5, amount: 1500000 }, { max_campuses: 12, amount: 3000000 }, { max_campuses: 23, amount: 6000000 }] },
+  // Deposit by the most the role offers (`ctc_max`, annual paise): the slab whose [ctc_from, ctc_to) holds it. `amount` is
+  // before GST. Placeholder reference (₹1,000 per LPA, stepped) until Novare's slab sheet replaces it; staff edit it at /staff/config.
+  "deposit.ctc_slabs": { schema: z.array(ctcSlab).min(1), default: [
+    slab(0, 10, 5_000), slab(10, 15, 10_000), slab(15, 20, 15_000), slab(20, 30, 20_000), slab(30, 40, 30_000), slab(40, 50, 40_000),
+    slab(50, 75, 50_000), slab(75, 100, 75_000), slab(100, 150, 100_000), slab(150, 200, 150_000), slab(200, null, 200_000)] },
   "deposit.probation_multiplier": { schema: z.number().positive(), default: 2 },
+  // A role that ends without a hire (no hire `deposit.dark_days` after its shortlist) has its deposit refunded on its own,
+  // less the gateway's charges. Off: it waits in the finance console like every other settlement.
+  "deposit.auto_refund_no_hire": { schema: z.boolean(), default: true },
+  "gst.rate": { schema: z.number().min(0).max(1), default: 0.18 },
+  // Cashfree's charge on a payment before its own GST, used when Cashfree has not reported the actual charge yet.
+  "payment.gateway_fee_rate": { schema: z.number().min(0).max(0.1), default: 0.0195 },
+  // Who issues the GST invoices. Fill in Novare's real GSTIN and address before going live.
+  "invoice.supplier": { schema: supplier, default: {
+    legalName: "Novare Talent Private Limited", gstin: "", address: "", state: "Maharashtra", stateCode: "27",
+    email: "accounts@novaretalent.com", sac: "998512" } },
   "deposit.engaged_threshold": { schema: z.number().min(0).max(1), default: 0.5 },
   "deposit.dark_days": { schema: z.number().int().positive(), default: 30 },
   "deposit.refund_sla_days": { schema: z.number().int().positive(), default: 7 },

@@ -22,7 +22,7 @@ export const useCompany = () => useContext(Ctx)!;
 
 const TITLES: Record<string, string> = { "/company": "Your roles", "/company/new": "Post a role" };
 /** Roles the company still has to act on. */
-export const needsAction = (r: CompanyRoleView) => r.status === "shortlist_ready" || (r.status === "terms_pending" && !!r.feeTerms) || r.status === "draft";
+export const needsAction = (r: CompanyRoleView) => r.status === "shortlist_ready" || (r.status === "terms_pending" && !!r.feeTerms) || r.status === "deposit_pending" || r.status === "draft";
 
 export function CompanySeat({ identity, campusCodes, roles, children }: { identity: CompanyIdentity; campusCodes: Record<string, string>; roles: CompanyRoleView[]; children: ReactNode }) {
   const path = usePathname();

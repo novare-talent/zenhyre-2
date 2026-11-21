@@ -22,6 +22,8 @@ export const user = z2.table("user", {
   /** Same value as auth.users.id in Supabase. */
   id: uuid("id").primaryKey(),
   isStaff: boolean("is_staff").notNull().default(false),
+  /** Finance access: settle deposits (refund, forfeit) from /staff/payments. Granted by SQL only, on top of is_staff. */
+  isFinance: boolean("is_finance").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

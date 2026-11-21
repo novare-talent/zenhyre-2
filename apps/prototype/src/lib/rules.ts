@@ -4,8 +4,13 @@ import { evaluateRules as gateRules, lpa, type RoleType, type RulesOutcome } fro
 
 export { formatPaise, percentOf, lpa, type Paise, type RoleType };
 
+export interface CtcSlab { ctcFrom: Paise; ctcTo: Paise | null; amount: Paise }
+
 export interface Rules {
   depositTiers: { maxCampuses: number; amount: Paise }[];
+  /** `deposit.ctc_slabs`: the deposit (before GST) by the most the role offers, annual CTC. */
+  depositCtcSlabs: CtcSlab[];
+  gstRate: number;
   engagedThreshold: number;
   darkDays: number;
   internFlat: Paise;
@@ -33,6 +38,27 @@ export function depositFor(rules: Rules, campusCount: number): Paise {
   const tier = rules.depositTiers.find((t) => campusCount <= t.maxCampuses);
   return (tier ?? rules.depositTiers[rules.depositTiers.length - 1]!).amount;
 }
+/**
+ * The deposit for a role by the most it offers (`ctc_max`): the slab with ctcFrom ≤ ctc < ctcTo, before GST. Mirrors
+ * `depositForCtc` in packages/roles. A CTC below every slab takes the lowest; no CTC yet prices nothing.
+ */
+export function depositForCtc(slabs: readonly CtcSlab[], ctc: Paise | null | undefined, multiplier = 1): Paise | null {
+  if (ctc == null || ctc <= 0 || slabs.length === 0) return null;
+  const sorted = [...slabs].sort((a, b) => a.ctcFrom - b.ctcFrom);
+  const slab = sorted.find((s) => ctc >= s.ctcFrom && (s.ctcTo === null || ctc < s.ctcTo))
+    ?? (ctc < sorted[0]!.ctcFrom ? sorted[0]! : sorted[sorted.length - 1]!);
+  return Math.round(slab.amount * multiplier);
+}
+/** The index of the slab `depositForCtc` picks, or -1. */
+export function slabIndexFor(slabs: readonly CtcSlab[], ctc: Paise | null | undefined): number {
+  const amount = depositForCtc(slabs, ctc);
+  if (amount === null) return -1;
+  const sorted = [...slabs].sort((a, b) => a.ctcFrom - b.ctcFrom);
+  return sorted.findIndex((s) => ctc! >= s.ctcFrom && (s.ctcTo === null || ctc! < s.ctcTo)) ?? -1;
+}
+/** "₹23,600.00": payments show paise. */
+export const formatPaiseExact = (p: Paise) => "₹" + (p / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export function tierIndexFor(rules: Rules, campusCount: number): number {
   if (campusCount <= 0) return -1;
   const i = rules.depositTiers.findIndex((t) => campusCount <= t.maxCampuses);

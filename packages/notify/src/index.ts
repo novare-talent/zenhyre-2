@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import { TEMPLATES, TemplateName } from "./templates";
-import { Transport } from "./transport";
+import { Attachment, Transport } from "./transport";
 export * from "./transport";
 export * from "./templates";
 
@@ -23,9 +23,9 @@ function buildNotify(db: DbOrTx, transport: Transport) {
 
   return {
     /** For recipients who may not have a user yet (magic links, invites). Email-only; no notification row. */
-    async sendToEmail(email: string, template: TemplateName, data: Record<string, unknown>) {
+    async sendToEmail(email: string, template: TemplateName, data: Record<string, unknown>, opts: { attachments?: Attachment[] } = {}) {
       const t = TEMPLATES[template];
-      await transport.send({ to: email.toLowerCase(), subject: t.subject(data), text: t.text(data) });
+      await transport.send({ to: email.toLowerCase(), subject: t.subject(data), text: t.text(data), attachments: opts.attachments });
     },
     async hasDeliverableEmail(userId: string) { return (await deliverableEmail(userId)) !== null; },
     /** Whether this template already went to the user with `data[key] === value` (for jobs that must not repeat). */
@@ -58,7 +58,7 @@ function buildNotify(db: DbOrTx, transport: Transport) {
       const rows = await db.update(schema.notification).set({ readAt: new Date() }).where(and(...conds)).returning({ id: schema.notification.id });
       return rows.length;
     },
-    async send(userId: string, template: TemplateName, data: Record<string, unknown>): Promise<SendResult> {
+    async send(userId: string, template: TemplateName, data: Record<string, unknown>, opts: { attachments?: Attachment[] } = {}): Promise<SendResult> {
       const t = TEMPLATES[template];
       const result: SendResult = { email: "skipped", inApp: false };
       if (t.channels.includes("in_app")) {
@@ -71,7 +71,7 @@ function buildNotify(db: DbOrTx, transport: Transport) {
           await db.insert(schema.notification).values({ userId, template, data, channel: "email", bounceReason: "no deliverable email" });
           result.email = "undeliverable";
         } else {
-          await transport.send({ to, subject: t.subject(data), text: t.text(data) });
+          await transport.send({ to, subject: t.subject(data), text: t.text(data), attachments: opts.attachments });
           await db.insert(schema.notification).values({ userId, template, data, channel: "email", sentAt: new Date() });
           result.email = "sent";
         }

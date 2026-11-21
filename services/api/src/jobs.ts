@@ -7,6 +7,7 @@ import { termsTimeout } from "./workflows/withdrawRole";
 import { darkCheck } from "./workflows/darkCheck";
 import { guaranteeExpiry } from "./workflows/guaranteeExpiry";
 import { joinGrace, joinPrompt } from "./workflows/confirmJoin";
+import { reconcilePayments } from "./workflows/payments";
 
 /** Jobs a workflow enqueues after it commits (§3.3). Each takes the role it is about. */
 export const ROLE_JOBS = {
@@ -99,6 +100,11 @@ export const SCHEDULED_JOBS = {
   /** Nightly, after the two above: close hired roles whose replacement guarantee has ended. */
   "role.guarantee_expiry": async (deps: AppDeps) =>
     sweep(deps, "role.guarantee_expiry", await deps.roles.listClosingWithHire(), async (roleId) => (await guaranteeExpiry(deps, { roleId })).closed),
+  /**
+   * Hourly (and every minute in the long-running server): check open checkouts with the gateway, carry out queued
+   * settlements (including ones requested from SQL), and re-check refunds in flight.
+   */
+  "payment.reconcile": async (deps: AppDeps) => reconcilePayments(deps),
   /** Nightly: student → final_year → alumnus by `grad_date` (§6.1). */
   "candidate.status_flip": async (deps: AppDeps) => ({ candidates: await deps.identity.refreshCandidateStatuses() }),
   /** Nightly: ask candidates to add a personal email at `identity.grad_nudge_days` around graduation (§6.1), once per offset. */

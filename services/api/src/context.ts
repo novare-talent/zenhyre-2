@@ -5,6 +5,7 @@ import { createIdentity, Identity } from "@zenhyre/identity";
 import { createNotify, Notify, Transport } from "@zenhyre/notify";
 import { createRoles, Roles } from "@zenhyre/roles";
 import { createMatching, Matching, Scorer } from "@zenhyre/matching";
+import { createLedger, fakeGateway, Ledger, PaymentGateway } from "@zenhyre/ledger";
 import type { GateModel } from "@zenhyre/gate";
 import { inlineJobs, JobQueue } from "./jobs";
 import type { AuthProvider } from "./auth/provider";
@@ -24,10 +25,20 @@ export interface AppConfig {
   scorer?: Scorer;
   /** Where workflows enqueue follow-up jobs. Defaults to running them in-process right after commit; pg-boss replaces it. */
   jobs?: (deps: AppDeps) => JobQueue;
+  /** Deposits and fees: Cashfree (`PAYMENT_PROVIDER=cashfree`), else the in-memory fake. */
+  gateway?: PaymentGateway;
+  /**
+   * Where the gateway posts its webhooks. Default: the web app's `/api/webhooks/cashfree`, which forwards to this API,
+   * so the API itself never has to be reachable from the internet.
+   */
+  paymentWebhookUrl?: string;
+  /** Minutes a checkout stays payable. Default 60. */
+  orderExpiryMinutes?: number;
 }
 type Limiter = ReturnType<typeof rateLimiter>;
-export interface AppDeps extends Omit<AppConfig, "jobs" | "linkLimits"> {
+export interface AppDeps extends Omit<AppConfig, "jobs" | "linkLimits" | "gateway" | "paymentWebhookUrl" | "orderExpiryMinutes"> {
   ops: Ops; identity: Identity; notify: Notify; roles: Roles; matching: Matching; jobs: JobQueue;
+  ledger: Ledger; gateway: PaymentGateway; paymentWebhookUrl: string; orderExpiryMinutes: number;
   limits: { linkPerEmail: Limiter; linkPerIp: Limiter };
 }
 
@@ -39,7 +50,7 @@ export async function buildDeps(cfg: AppConfig): Promise<AppDeps> {
     finalYearMonths: await ops.config.get("identity.final_year_months_before_grad"),
     maxVerificationAttempts: await ops.config.get("identity.max_verification_attempts"),
   });
-  const { jobs, linkLimits, ...rest } = cfg;
+  const { jobs, linkLimits, gateway, paymentWebhookUrl, orderExpiryMinutes, ...rest } = cfg;
   const window = 15 * 60 * 1000;
   const deps = {
     ...rest, ops, identity, notify: createNotify(cfg.db, cfg.transport),
@@ -49,9 +60,13 @@ export async function buildDeps(cfg: AppConfig): Promise<AppDeps> {
     },
     roles: createRoles(cfg.db, { clock: cfg.clock }),
     matching: createMatching(cfg.db, { clock: cfg.clock, scorer: cfg.scorer, candidates: identity }),
+    ledger: createLedger(cfg.db, { clock: cfg.clock }),
+    gateway: gateway ?? fakeGateway(),
+    paymentWebhookUrl: paymentWebhookUrl ?? `${cfg.baseUrl.replace(/\/$/, "")}/api/webhooks/cashfree`,
+    orderExpiryMinutes: orderExpiryMinutes ?? 60,
   } as AppDeps;
   deps.jobs = jobs ? jobs(deps) : inlineJobs(deps);
   return deps;
 }
 
-export type Vars = { user: { id: string; isStaff: boolean } | null; deps: AppDeps };
+export type Vars = { user: { id: string; isStaff: boolean; isFinance: boolean } | null; deps: AppDeps };

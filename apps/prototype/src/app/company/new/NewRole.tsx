@@ -5,7 +5,7 @@ import { Board } from "@/components/Board";
 import { Arrow } from "@/components/Icons";
 import { useRules } from "@/components/Rules";
 import { CAMPUSES } from "@/data/campuses";
-import { defaultFeeTerms, depositFor, describeTerms, evaluateRules, formatPaise, lpa, tierIndexFor, type RoleType } from "@/lib/rules";
+import { defaultFeeTerms, depositForCtc, describeTerms, evaluateRules, formatPaise, lpa, slabIndexFor, type RoleType } from "@/lib/rules";
 import { zh } from "@/lib/zh";
 import { useNotify } from "@/components/Toasts";
 import { useCompany } from "@/seats/company";
@@ -48,7 +48,10 @@ export function NewRole() {
     { ok: draft.locations.length > 0, label: "Location", detail: draft.locations.length ? draft.locations.join(", ") : "At least one" },
     { ok: reach.size > 0, label: "Campuses", detail: `${reach.size} switched on` },
   ];
-  const tier = tierIndexFor(rules, reach.size);
+  const slabs = [...rules.depositCtcSlabs].sort((a, b) => a.ctcFrom - b.ctcFrom);
+  const offered = draft.ctcMax || draft.ctcMin || null;
+  const deposit = depositForCtc(slabs, offered);
+  const slab = slabIndexFor(slabs, offered);
   const terms = defaultFeeTerms(rules, type, Number(expMin) || 0);
 
   const fill = () => { setTitle(EXAMPLE.title); setType(EXAMPLE.type); setMin(EXAMPLE.min); setMax(EXAMPLE.max); setExpMin(EXAMPLE.expMin); setExpMax(EXAMPLE.expMax); setLocations(EXAMPLE.locations); setJd(EXAMPLE.jd); setReach(new Set(EXAMPLE.reach)); };
@@ -135,7 +138,7 @@ export function NewRole() {
           </div>
         </div>
         <div className="post" style={{ "--i": 4 } as React.CSSProperties}>
-          <Board selected={reach} onToggle={toggle} compact label="Campuses this role reaches. The deposit is priced by how many are switched on." />
+          <Board selected={reach} onToggle={toggle} compact label="Campuses this role reaches." />
         </div>
       </div>
 
@@ -154,12 +157,13 @@ export function NewRole() {
         <div className="sheet post" style={{ "--i": 5 } as React.CSSProperties}>
           <div className="sheet__head"><h3>What it will cost</h3></div>
           <div className="sheet__pad">
-            <p className="meta">Refundable deposit</p>
-            <p className="big-num num" aria-live="polite">{formatPaise(depositFor(rules, reach.size))}</p>
-            <ol className="tiers" aria-label="Deposit tiers" style={{ gridTemplateColumns: "1fr" }}>
-              {rules.depositTiers.map((t, i) => (
-                <li key={t.maxCampuses} className={`tier${i === tier ? " is-on" : ""}`}>
-                  <span>{i === 0 ? "1 to 5" : i === 1 ? "6 to 12" : "13 to 23"} campuses</span><span className="num">{formatPaise(t.amount)}</span>
+            <p className="meta">Refundable deposit, by the most you offer</p>
+            <p className="big-num num" aria-live="polite">{deposit === null ? "Set the pay" : formatPaise(deposit)}</p>
+            {deposit !== null && <p className="meta num">plus {Math.round(rules.gstRate * 100)}% GST, {formatPaise(Math.round(deposit * (1 + rules.gstRate)))} in all</p>}
+            <ol className="tiers" aria-label="Deposit slabs by annual CTC" style={{ gridTemplateColumns: "1fr" }}>
+              {slabs.map((t, i) => (
+                <li key={t.ctcFrom} className={`tier${i === slab ? " is-on" : ""}`}>
+                  <span>{t.ctcTo === null ? `${lpa(t.ctcFrom)} and up` : `${t.ctcFrom === 0 ? "Up to" : `${lpa(t.ctcFrom)} to`} ${lpa(t.ctcTo)}`}</span><span className="num">{formatPaise(t.amount)}</span>
                 </li>
               ))}
             </ol>
@@ -167,7 +171,7 @@ export function NewRole() {
               <dt>Fee on a hire</dt><dd>{describeTerms(terms)}</dd>
               <dt>Replacement guarantee</dt><dd>{terms.replacementGuaranteeDays} days</dd>
             </dl>
-            <p className="meta" style={{ marginTop: "0.9rem" }}>Terms are confirmed by Novare after the gate and you accept them before paying anything.</p>
+            <p className="meta" style={{ marginTop: "0.9rem" }}>Amounts are before {Math.round(rules.gstRate * 100)}% GST. You pay the deposit after the gate and the terms, before the role goes live. It is refunded, less the payment gateway's charges, if the role ends with no hire, and applied to the fee on a hire.</p>
           </div>
         </div>
         <button type="submit" className="btn btn--ink" style={{ minHeight: "3.25rem" }} disabled={busy}>{busy ? "Submitting" : "Submit to the gate"}<Arrow /></button>
