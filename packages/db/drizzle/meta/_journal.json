@@ -29,6 +29,13 @@
       "when": 1795249628365,
       "tag": "0003_cashfree_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795274701413,
+      "tag": "0004_legacy_1_0_import",
+      "breakpoints": true
     }
   ]
 }

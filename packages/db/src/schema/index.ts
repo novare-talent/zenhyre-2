@@ -5,3 +5,4 @@ export * from "./roles";
 export * from "./matching";
 export * from "./_schema";
 export * from "./payments";
+export * from "./legacy";

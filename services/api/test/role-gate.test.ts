@@ -134,7 +134,7 @@ describe("stage 3: human", () => {
       expect(items).toHaveLength(1);
       expect(items[0].payload.reason).toMatch(/No model pass is configured/);
     } finally { await bare.close(); }
-  });
+  }, 30_000); // builds and migrates a second database inside the test
   it("staff accept, optionally narrowing the reach; the item closes and the decision is audited", async () => {
     respond = () => ({ score: 92, suggested_reach: [iitb], concerns: [], reason: "Strong role." });
     const role = await submit({ campusReach: ["IITB", "IITD"] });

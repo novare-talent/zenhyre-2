@@ -15,9 +15,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts",
-    "test": "vitest run"
+    "migrate": "tsx --env-file-if-exists=../../services/api/.env src/migrate.ts",
+    "seed": "tsx --env-file-if-exists=../../services/api/.env src/seed.ts",
+    "test": "vitest run",
+    "sql:bundle": "node scripts/bundle-sql.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.0",
