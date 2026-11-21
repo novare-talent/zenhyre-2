@@ -80,10 +80,16 @@ describe("import_from_v1", () => {
     expect(await count("candidate")).toBe(0);
     // Legacy copies.
     const [lp] = await db.select().from(schema.legacyProfile).where(sql`user_id = ${id.cand}`);
-    expect(lp).toMatchObject({ legacyRole: "user", resumeText: "Asha: Python, Go", phone: "9876543210" });
+    expect(lp).toMatchObject({ legacyRole: "user", resumeText: "Asha: Python, Go" });
+    expect((await db.select().from(schema.user).where(sql`id = ${id.cand}`))[0]).toMatchObject({ phone: "9876543210" });
     expect((await db.select().from(schema.legacyProfile).where(sql`user_id = ${id.founder}`))[0]!.gstNumber).toBe("27AAACL1234A1Z5");
     const [job] = await db.select().from(schema.legacyJob);
-    expect(job).toMatchObject({ id: id.job, companyId: acme!.id, title: "Backend intern", appliedCount: 2, shortlistedCount: 1, tags: ["go", "python"] });
+    expect(job).toMatchObject({ id: id.job, employerUserId: id.founder, title: "Backend intern", tags: ["go", "python"] });
+    // Company and counts are derived, not stored: the employer's company, and the applications.
+    const [derived] = await rows(`select cu.company_id, count(a.*) as applied, count(*) filter (where a.shortlisted) as shortlisted
+      from zenhyre2.legacy_job j join zenhyre2.company_user cu on cu.user_id = j.employer_user_id
+      left join zenhyre2.legacy_application a on a.legacy_job_id = j.id group by cu.company_id`);
+    expect(derived).toMatchObject({ company_id: acme!.id, applied: "2", shortlisted: "1" });
     expect(job!.forms).toEqual([{ q: ["Why us?"] }]);
     const apps = await db.select().from(schema.legacyApplication);
     expect(apps.find((a) => a.userId === id.cand)!.shortlisted).toBe(true);

@@ -19,8 +19,8 @@
 --   profiles + auth.users        → zenhyre2.user (with the same person columns: names, phone, links, image, resume),
 --                                  zenhyre2.user_email (verified as 1.0/Supabase had it); zenhyre2.profiles shows them in 1.0's shape
 --   clients on a work domain     → zenhyre2.company (one per domain) + company_user (earliest = owner)
---   every profile                → zenhyre2.legacy_profile (names, phone, links, resume text, GST no.) to prefill onboarding
---   jobs + forms + evaluations   → zenhyre2.legacy_job (history only; not live 2.0 roles)
+--   every profile                → zenhyre2.legacy_profile (role, resume text, GST no., campus hint, the raw 1.0 row)
+--   jobs + forms + evaluations   → zenhyre2.legacy_job (history only; not live 2.0 roles; company = the employer's)
 --   responses                    → zenhyre2.legacy_application
 --   onboarding, client_submission, signed_contracts, bot_fulltime_leads, subscriptions, assignments
 --                                → zenhyre2.legacy_record (row for row, as JSON)
@@ -142,43 +142,36 @@ begin
        from v1_src where role = 'client' and conflict is null and (domain = any(v_freemail) or campus_id is not null)));
 
     -- 3. Legacy profiles (refreshed on every run).
-    insert into zenhyre2.legacy_profile (user_id, legacy_role, first_name, last_name, phone, linkedin_url, github_url, profile_image,
-                                         resume_url, resume_path, resume_text, company_name, gst_number, campus_id, source, imported_at)
-      select s.id, s.role, s.row->>'first_name', s.row->>'last_name', s.row->>'phone', s.row->>'linkedin_link', s.row->>'github_link',
-             s.row->>'profile_image', s.row->>'resume_url', r.resume_path, r.resume_text, s.company_name, sub.gst_number, s.campus_id,
-             s.row, now()
+    insert into zenhyre2.legacy_profile (user_id, legacy_role, resume_path, resume_text, gst_number, campus_id, source, imported_at)
+      select s.id, s.role, r.resume_path, r.resume_text, sub.gst_number, s.campus_id, s.row, now()
       from v1_src s
       left join public.candidate_resumes r on r.profile_id = s.id
       left join public.subscriptions sub on sub.profile_id = s.id
       where s.conflict is null and exists (select 1 from zenhyre2."user" z where z.id = s.id)
-      on conflict (user_id) do update set legacy_role = excluded.legacy_role, first_name = excluded.first_name, last_name = excluded.last_name,
-        phone = excluded.phone, linkedin_url = excluded.linkedin_url, github_url = excluded.github_url, profile_image = excluded.profile_image,
-        resume_url = excluded.resume_url, resume_path = excluded.resume_path, resume_text = excluded.resume_text,
-        company_name = excluded.company_name, gst_number = excluded.gst_number, campus_id = excluded.campus_id,
+      on conflict (user_id) do update set legacy_role = excluded.legacy_role, resume_path = excluded.resume_path,
+        resume_text = excluded.resume_text, gst_number = excluded.gst_number, campus_id = excluded.campus_id,
         source = excluded.source, imported_at = excluded.imported_at;
     get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('legacy_profiles', v_n);
 
     -- 4. Jobs, with their forms and evaluations, as history.
-    insert into zenhyre2.legacy_job (id, company_id, employer_user_id, title, description, jd_pdf_url, status, level, location, duration,
-                                     stipend, tags, closing_at, form_link, forms, evaluations, applied_count, shortlisted_count, created_at, source, imported_at)
+    insert into zenhyre2.legacy_job (id, employer_user_id, title, description, jd_pdf_url, status, level, location, duration,
+                                     stipend, tags, closing_at, form_link, forms, evaluations, created_at, source, imported_at)
       select j.job_id,
-             (select cu.company_id from zenhyre2.company_user cu where cu.user_id = j.employer_id limit 1),
              (select z.id from zenhyre2."user" z where z.id = j.employer_id),
              j."Job_Name", j."Job_Description", nullif(j."JD_pdf", ''), j.status, j.level, j.location, j.duration, j.stipend,
              coalesce(j.tags, '{}'), j."closingTime", j.form_link,
              coalesce((select jsonb_agg(f.form order by f.created_at) from public.forms f where f.job_id = j.job_id), '[]'),
              coalesce((select jsonb_agg(e.results) from public.evaluations e where e.job_id = j.job_id), '[]'),
-             coalesce(cardinality(j."Applied_Candidates"), 0), coalesce(cardinality(j."Shortlisted_Candidates"), 0),
              j.created_at, to_jsonb(j), now()
       from public.jobs j
-      on conflict (id) do update set company_id = excluded.company_id, employer_user_id = excluded.employer_user_id, title = excluded.title,
+      on conflict (id) do update set employer_user_id = excluded.employer_user_id, title = excluded.title,
         description = excluded.description, jd_pdf_url = excluded.jd_pdf_url, status = excluded.status, level = excluded.level,
         location = excluded.location, duration = excluded.duration, stipend = excluded.stipend, tags = excluded.tags,
         closing_at = excluded.closing_at, form_link = excluded.form_link, forms = excluded.forms, evaluations = excluded.evaluations,
-        applied_count = excluded.applied_count, shortlisted_count = excluded.shortlisted_count, source = excluded.source,
-        imported_at = excluded.imported_at;
+        source = excluded.source, imported_at = excluded.imported_at;
     get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('legacy_jobs', v_n,
-      'legacy_jobs_without_company', (select count(*) from zenhyre2.legacy_job where company_id is null));
+      'legacy_jobs_without_company', (select count(*) from zenhyre2.legacy_job l
+        where not exists (select 1 from zenhyre2.company_user cu where cu.user_id = l.employer_user_id)));
 
     -- 5. Applications.
     insert into zenhyre2.legacy_application (id, legacy_job_id, user_id, answers, shortlisted, applied_at, imported_at)
