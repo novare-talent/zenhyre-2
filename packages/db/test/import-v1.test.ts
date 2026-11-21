@@ -88,6 +88,16 @@ describe("import_from_v1", () => {
     const apps = await db.select().from(schema.legacyApplication);
     expect(apps.find((a) => a.userId === id.cand)!.shortlisted).toBe(true);
     expect(apps.find((a) => a.userId === id.cand2)!.shortlisted).toBe(false);
+    // The person columns match 1.0's, and zenhyre2.profiles reads exactly like public.profiles.
+    const [founder] = await db.select().from(schema.user).where(sql`id = ${id.founder}`);
+    expect(founder).toMatchObject({ firstName: "Pfou", phone: "9876543210", linkedinLink: "https://linkedin.com/in/x" });
+    const cols = async (schemaName: string) => (await rows(`select column_name from information_schema.columns
+      where table_schema = '${schemaName}' and table_name = 'profiles' order by ordinal_position`)).map((r) => r.column_name);
+    expect(await cols("zenhyre2")).toEqual(await cols("public"));
+    const view = await rows(`select role, email, company_name from zenhyre2.profiles where id in ('${id.founder}', '${id.cand}', '${id.admin}') order by email`);
+    expect(view).toEqual([{ role: "user", email: "asha@iitb.ac.in", company_name: null }, { role: "client", email: "founder@acme.io", company_name: "Acme Labs" },
+      // Not staff yet (p_grant_staff was off), so the view shows the 1.0 role.
+      { role: "admin", email: "ops@novaretalent.com", company_name: null }]);
     // The person whose address another 2.0 user holds is left out.
     expect(await db.select().from(schema.user).where(sql`id = ${id.clash}`)).toHaveLength(0);
   });

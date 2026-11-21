@@ -1,3 +1,4 @@
+import { splitName } from "./auth";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { DbOrTx, schema } from "@zenhyre/db";
 import type { CandidateProfile } from "@zenhyre/db/schema";
@@ -22,6 +23,17 @@ export interface CreateCandidateInput {
 export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYearMonths: number; maxVerificationAttempts: number }) {
   const campus = createCampus(db);
 
+  /**
+   * Keeps the person columns on `user` (named as 1.0's profiles named them) in step with what a candidate tells us:
+   * name → first_name/last_name, linkedin_url → linkedin_link, cv_url → resume_url.
+   */
+  async function mirrorToUser(userId: string, p: { name?: string; linkedin_url?: string; cv_url?: string }) {
+    const set: Partial<typeof schema.user.$inferInsert> = {};
+    if (p.name?.trim()) Object.assign(set, splitName(p.name));
+    if (p.linkedin_url !== undefined) set.linkedinLink = p.linkedin_url || null;
+    if (p.cv_url !== undefined) set.resumeUrl = p.cv_url || null;
+    if (Object.keys(set).length) await db.update(schema.user).set({ ...set, updatedAt: clock.now() }).where(eq(schema.user.id, userId));
+  }
   async function get(userId: string) {
     const [row] = await db.select().from(schema.candidate).where(eq(schema.candidate.userId, userId));
     return row ?? null;
@@ -53,6 +65,7 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
         verifiedBy: byEmail ? "system" : null, verifiedAt: byEmail ? now : null,
         profile: { ...(input.name ? { name: input.name } : {}), ...(input.claimed ? { linkedin_url: input.claimed.linkedinUrl, claimed: input.claimed } : {}) },
       }).returning();
+      await mirrorToUser(input.userId, { name: input.name, linkedin_url: input.claimed?.linkedinUrl });
       return row!;
     },
 
@@ -94,6 +107,7 @@ export function createCandidateModule(db: DbOrTx, clock: Clock, opts: { finalYea
       const c = await get(userId); if (!c) throw new NotFound("candidate");
       const [row] = await db.update(schema.candidate).set({ profile: { ...c.profile, ...patch } })
         .where(eq(schema.candidate.userId, userId)).returning();
+      await mirrorToUser(userId, patch);
       return row!;
     },
     async setCandidateStatus(userId: string, status: Status) {

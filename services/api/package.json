@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "node init && tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
-    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "node init && tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "node init && tsx --env-file-if-exists=.env src/index.ts",
     "issue:association": "tsx src/scripts/issueAssociationAccess.ts",
-    "build:vercel": "node scripts/build-vercel.mjs"
+    "build:vercel": "node init && node scripts/build-vercel.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",

@@ -1,7 +1,7 @@
 -- Zenhyre 1.0 (`public`) → 2.0 (`zenhyre2`) data import.
 --
 -- Run in the Supabase SQL editor as `postgres` (it reads `public` and `auth.users`, which the `zenhyre_api` role cannot),
--- after the 2.0 migrations through 0004_legacy_1_0_import have been applied.
+-- after the 2.0 migrations (supabase/apply-migrations.sql or `pnpm db:migrate`) have been applied.
 --
 --   1. Paste this file and run it: it only (re)creates the function below.
 --   2. Dry run (the default): changes nothing, returns the report.
@@ -16,7 +16,8 @@
 -- imported person signs in to 2.0 with the same account.
 --
 -- What goes where:
---   profiles + auth.users        → zenhyre2.user, zenhyre2.user_email (verified as 1.0/Supabase had it)
+--   profiles + auth.users        → zenhyre2.user (with the same person columns: names, phone, links, image, resume),
+--                                  zenhyre2.user_email (verified as 1.0/Supabase had it); zenhyre2.profiles shows them in 1.0's shape
 --   clients on a work domain     → zenhyre2.company (one per domain) + company_user (earliest = owner)
 --   every profile                → zenhyre2.legacy_profile (names, phone, links, resume text, GST no.) to prefill onboarding
 --   jobs + forms + evaluations   → zenhyre2.legacy_job (history only; not live 2.0 roles)
@@ -97,6 +98,21 @@ begin
       from v1_src s where s.conflict is null
       on conflict (email) do nothing;
     get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('emails_created', v_n);
+    -- Person details onto the user, in the same columns 1.0 had (migration 0005). Anything already set in 2.0 is kept.
+    if exists (select 1 from information_schema.columns where table_schema = 'zenhyre2' and table_name = 'user' and column_name = 'first_name') then
+      update zenhyre2."user" z set
+        first_name = coalesce(z.first_name, nullif(trim(s.row->>'first_name'), '')),
+        last_name = coalesce(z.last_name, nullif(trim(s.row->>'last_name'), '')),
+        phone = coalesce(z.phone, nullif(trim(s.row->>'phone'), '')),
+        github_link = coalesce(z.github_link, nullif(trim(s.row->>'github_link'), '')),
+        linkedin_link = coalesce(z.linkedin_link, nullif(trim(s.row->>'linkedin_link'), '')),
+        profile_image = coalesce(z.profile_image, nullif(trim(s.row->>'profile_image'), '')),
+        resume_url = coalesce(z.resume_url, nullif(trim(s.row->>'resume_url'), '')),
+        is_subscribed = coalesce((s.row->>'is_subscribed')::boolean, z.is_subscribed),
+        updated_at = now()
+      from v1_src s where s.id = z.id and s.conflict is null;
+      get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('person_details_copied', v_n);
+    end if;
 
     -- 2. Companies: 1.0 clients on a work domain, one company per domain (2.0 needs a verified work domain; §6.4).
     --    A client who is already a 2.0 candidate keeps that one role and is not added.
