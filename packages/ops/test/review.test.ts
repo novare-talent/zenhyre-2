@@ -1,9 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { testDb } from "@zenhyre/db/test";
+import { schema } from "@zenhyre/db";
 import { createOps } from "../src/index";
 
 let db: any, close: () => Promise<void>;
-beforeAll(async () => ({ db, close } = await testDb()));
+beforeAll(async () => {
+  ({ db, close } = await testDb());
+  // review_item.association_id and staff_action.actor_user_id are foreign keys: what they point at exists.
+  const campuses = await db.insert(schema.campus).values([
+    { name: "IIT Bombay", shortCode: "IITB", emailDomains: ["iitb.ac.in"] }, { name: "IIT Delhi", shortCode: "IITD", emailDomains: ["iitd.ac.in"] }]).returning();
+  await db.insert(schema.association).values([
+    { id: "11111111-1111-1111-1111-111111111111", campusId: campuses[0].id, name: "IITB Alumni" },
+    { id: "33333333-3333-3333-3333-333333333333", campusId: campuses[1].id, name: "IITD Alumni" }]);
+  await db.insert(schema.user).values({ id: "22222222-2222-2222-2222-222222222222", isStaff: true });
+});
 afterAll(() => close());
 
 describe("review items", () => {

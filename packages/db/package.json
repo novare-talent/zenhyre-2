@@ -12,7 +12,7 @@
     "./orm": "./dist/orm.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node init && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate": "drizzle-kit generate",
     "migrate": "tsx --env-file-if-exists=../../services/api/.env src/migrate.ts",

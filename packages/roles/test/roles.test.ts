@@ -19,6 +19,16 @@ beforeAll(async () => {
   roles = createRoles(db, { clock });
   const [c] = await db.insert(schema.company).values({ name: "Lab0", verifiedDomain: "lab0.ai" }).returning();
   companyId = c!.id;
+  // role.created_by and role.hired_match_id are foreign keys: the creator and the hired match exist.
+  const candidateId = "44444444-4444-4444-8444-444444444444";
+  await db.insert(schema.user).values([{ id: company.userId! }, { id: candidateId }]);
+  const [campus] = await db.insert(schema.campus).values({ name: "IIT Bombay", shortCode: "IITB", emailDomains: ["iitb.ac.in"] }).returning();
+  await db.insert(schema.candidate).values({ userId: candidateId, campusId: campus!.id, gradDate: "2027-06-30", course: "B.Tech",
+    status: "final_year", verificationState: "verified", verificationSource: "campus_email" });
+  const host = await roles.create({ companyId, createdBy: company.userId!, content: { title: "Match host", type: "fresher" } });
+  await db.insert(schema.match).values({ id: matchId, roleId: host.id, candidateId, fitScore: 80 });
+  const second = await roles.create({ companyId, createdBy: company.userId!, content: { title: "Second match host", type: "fresher" } });
+  await db.insert(schema.match).values({ id: "44444444-4444-4444-8444-444444444444", roleId: second.id, candidateId, fitScore: 70 });
 });
 afterAll(() => close());
 

@@ -1,11 +1,10 @@
 node_modules
 dist
 .turbo
-.env
-.env.*
 !.env.example
 .next
 *.tsbuildinfo
 .shots
 .test-pg
 .vercel
+config.bat
