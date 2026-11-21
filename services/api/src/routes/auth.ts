@@ -79,6 +79,25 @@ authRoutes.get("/me", async (c) => {
   const publicCampus = (id: string) => { const x = campuses.find((k) => k.id === id); return x ? { id: x.id, name: x.name, shortCode: x.shortCode } : null; };
   const campus = candidate ? publicCampus(candidate.campusId) : null;
   const company = membership ? await identity.getCompany(membership.companyId) : null;
-  return c.json({ user: c.var.user, emails, candidate, campus, membership, company,
+  const row = await identity.getUser(c.var.user.id);
+  const person = row ? { firstName: row.firstName, lastName: row.lastName, phone: row.phone, githubLink: row.githubLink, linkedinLink: row.linkedinLink,
+    profileImage: row.profileImage, resumeUrl: row.resumeUrl, isSubscribed: row.isSubscribed, updatedAt: row.updatedAt } : null;
+  return c.json({ user: c.var.user, person, emails, candidate, campus, membership, company,
     associations: associations.map((a) => ({ ...a, campus: publicCampus(a.campusId) })) });
+});
+
+const url = z.string().trim().max(500).url().refine((u) => /^https?:\/\//i.test(u), "must be an http(s) link");
+const personBody = z.object({
+  firstName: z.string().trim().min(1).max(100).nullable(), lastName: z.string().trim().max(100).nullable(),
+  phone: z.string().trim().regex(/^\+?[0-9 ()-]{7,20}$/, "not a phone number").nullable(),
+  githubLink: url.nullable(), linkedinLink: url.nullable(), profileImage: url.nullable(), resumeUrl: url.nullable(),
+  isSubscribed: z.boolean(),
+}).partial().strict();
+/** The signed-in person's own details (any seat): the columns 1.0's profiles had. */
+authRoutes.patch("/me", async (c) => {
+  if (!c.var.user) return c.json({ error: "unauthenticated" }, 401);
+  const patch = personBody.parse(await c.req.json());
+  const row = await c.var.deps.identity.updatePerson(c.var.user.id, patch);
+  return c.json({ person: row && { firstName: row.firstName, lastName: row.lastName, phone: row.phone, githubLink: row.githubLink,
+    linkedinLink: row.linkedinLink, profileImage: row.profileImage, resumeUrl: row.resumeUrl, isSubscribed: row.isSubscribed, updatedAt: row.updatedAt } });
 });

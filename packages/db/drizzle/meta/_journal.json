@@ -36,6 +36,13 @@
       "when": 1795274701413,
       "tag": "0004_legacy_1_0_import",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795275962820,
+      "tag": "0005_user_person_columns",
+      "breakpoints": true
     }
   ]
 }

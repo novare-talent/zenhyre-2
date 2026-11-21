@@ -5,6 +5,7 @@ import { createCandidateModule } from "./candidate";
 import { createCompanyModule } from "./company";
 import { createAssociationModule } from "./association";
 export * from "./candidate";
+export { PERSON_FIELDS, splitName, type PersonPatch } from "./auth";
 
 export interface IdentityDeps {
   clock?: Clock; finalYearMonths?: number; maxVerificationAttempts?: number; freemailDomains?: string[];

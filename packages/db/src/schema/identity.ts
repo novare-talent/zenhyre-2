@@ -18,13 +18,27 @@ export const campus = z2.table("campus", {
   internalTier: integer("internal_tier").notNull().default(3),
 });
 
+/**
+ * A person, whatever their seat. Same id as auth.users.id in Supabase. The person columns carry the names 1.0's
+ * `public.profiles` used, so the two read alike; `zenhyre2.profiles` (a view, migration 0005) shows 2.0 users in exactly
+ * 1.0's shape, with email (from `user_email`), role (from the seat rows) and company name filled in.
+ */
 export const user = z2.table("user", {
-  /** Same value as auth.users.id in Supabase. */
   id: uuid("id").primaryKey(),
   isStaff: boolean("is_staff").notNull().default(false),
   /** Finance access: settle deposits (refund, forfeit) from /staff/payments. Granted by SQL only, on top of is_staff. */
   isFinance: boolean("is_finance").notNull().default(false),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phone: text("phone"),
+  githubLink: text("github_link"),
+  linkedinLink: text("linkedin_link"),
+  profileImage: text("profile_image"),
+  resumeUrl: text("resume_url"),
+  /** Product and marketing email (not transactional email, which always goes). */
+  isSubscribed: boolean("is_subscribed").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const userEmail = z2.table("user_email", {
