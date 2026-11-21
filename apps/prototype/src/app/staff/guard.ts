@@ -11,3 +11,10 @@ export async function requireStaffSession() {
   if (!s.me.user.isStaff) notFound();
   return s;
 }
+
+/** The finance console: staff who also hold `user.is_finance` (granted in SQL). Anyone else gets a 404. */
+export async function requireFinanceSession() {
+  const s = await requireStaffSession();
+  if (!s.me.user.isFinance) notFound();
+  return s;
+}

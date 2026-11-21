@@ -6,7 +6,7 @@ import type { AppConfig } from "../src/context";
 import { fakeAuth } from "../src/auth/fakeAuth";
 
 /** A fresh database and app per test file. The clock is fixed at `iso` and can be moved with `clock.set` / `clock.advance`. */
-export async function testApp(iso = "2026-11-05T10:00:00Z", extra: Partial<Pick<AppConfig, "gateModel" | "scorer" | "jobs" | "linkLimits">> & { accessTtlMs?: number } = {}) {
+export async function testApp(iso = "2026-11-05T10:00:00Z", extra: Partial<Pick<AppConfig, "gateModel" | "scorer" | "jobs" | "linkLimits" | "gateway">> & { accessTtlMs?: number } = {}) {
   const { db, url, close } = await testDb();
   const transport = new MemoryTransport();
   const clock = mutableClock(iso);

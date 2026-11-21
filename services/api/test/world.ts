@@ -19,12 +19,13 @@ export interface Seat { email: string; userId: string; req: Req }
 type Before = "draft" | "gated" | "rejected" | "terms_pending" | "terms_released" | "deposit_pending" | "broadcast";
 
 /** A fresh database with one campus, a staff seat, a company and its rival. Each describe gets its own, so one block's clock cannot age another's roles. */
-export async function world() {
+export async function world(opts: { gateway?: import("@zenhyre/ledger").PaymentGateway } = {}) {
   const scores: Record<string, number> = {};
   let borderline = false;
   const t = await testApp("2026-11-05T10:00:00Z", {
     scorer: fixedScorer(scores),
     gateModel: fixtureGateModel((r: GateRole) => ({ score: borderline ? 55 : 85, suggested_reach: r.campusReach, concerns: [], reason: borderline ? "Borderline." : "A good fit." })),
+    gateway: opts.gateway,
   });
   await t.db.insert(schema.campus).values({ name: "IIT Bombay", shortCode: "IITB", emailDomains: ["iitb.ac.in"] });
 

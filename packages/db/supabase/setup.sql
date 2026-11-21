@@ -29,5 +29,5 @@ alter default privileges for role zenhyre_api in schema zenhyre2 revoke all on t
 alter default privileges for role zenhyre_api in schema zenhyre2 revoke all on sequences from public, anon, authenticated;
 alter default privileges for role zenhyre_api in schema zenhyre2 revoke all on functions from public, anon, authenticated;
 
--- 4. zenhyre_api must not touch 1.0's data. The 1.0 -> 2.0 migration (spec §15) will get its own read-only grant then.
+-- 4. zenhyre_api must not touch 1.0's data. The 1.0 -> 2.0 import (import-from-1.0.sql) runs as postgres instead.
 revoke all on all tables in schema public from zenhyre_api;

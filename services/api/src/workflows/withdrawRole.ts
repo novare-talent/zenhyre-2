@@ -11,6 +11,9 @@ import { resolveDepositTx } from "./resolveDeposit";
  */
 export async function withdrawRoleTx(w: Wf, input: { role: Role; actor: Actor; note?: string; tell?: "role_closed" | "terms_expired"; tellData?: Record<string, unknown> }) {
   const withdrawn = await w.m.roles.transition(input.role.id, "withdrawn", input.actor, input.note);
+  // A checkout left open is retired; if the company pays it anyway, the payment is refunded (`paymentCaptured`).
+  const open = await w.m.ledger.activeOrder(withdrawn.id, "deposit");
+  if (open) await w.m.ledger.updateOrder(open.id, { status: "cancelled" });
   if (input.role.status === "gated") {
     // A role withdrawn mid-review leaves nothing for staff to decide: take it out of the gate queue.
     const open = (await w.m.ops.listReviews({ kind: "gate", open: true })).filter((i) => i.refType === "role" && i.refId === withdrawn.id);

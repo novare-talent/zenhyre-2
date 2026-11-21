@@ -34,3 +34,18 @@ export function depositFor(tiers: readonly DepositTier[], campusCount: number, m
   const tier = sorted.find((t) => campusCount <= t.max_campuses) ?? sorted[sorted.length - 1]!;
   return Math.round(tier.amount * multiplier);
 }
+
+export interface CtcSlab { ctc_from: Paise; ctc_to: Paise | null; amount: Paise }
+
+/**
+ * The deposit for a role by the most it offers (`ctc_max`, annual paise): the slab with `ctc_from ≤ ctc < ctc_to`
+ * (`ctc_to` null = no ceiling), times the probation multiplier. Before GST. A CTC below every slab takes the lowest;
+ * a role with no CTC cannot be priced and returns null (staff set `deposit_amount` by hand).
+ */
+export function depositForCtc(slabs: readonly CtcSlab[], ctc: Paise | null | undefined, multiplier = 1): Paise | null {
+  if (ctc == null || ctc <= 0 || slabs.length === 0) return null;
+  const sorted = [...slabs].sort((a, b) => a.ctc_from - b.ctc_from);
+  const slab = sorted.find((s) => ctc >= s.ctc_from && (s.ctc_to === null || ctc < s.ctc_to))
+    ?? (ctc < sorted[0]!.ctc_from ? sorted[0]! : sorted[sorted.length - 1]!);
+  return Math.round(slab.amount * multiplier);
+}

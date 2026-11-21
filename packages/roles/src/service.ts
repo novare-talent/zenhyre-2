@@ -36,6 +36,8 @@ export interface TransitionOpts {
   depositAmount?: number;
   /** → broadcast: `match.broadcast_days`. */
   broadcastDays?: number;
+  /** deposit_pending → broadcast because the gateway confirmed the deposit (no note needed; `deposit_mode = cashfree`). */
+  depositPaid?: boolean;
   /** shortlist_ready → closing with a hire. */
   hiredMatchId?: string;
   /** rejected → gated: `gate.appeal_window_days`. */
@@ -115,10 +117,16 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
       set.depositAmount = opts.depositAmount;
     }
     if (to === "broadcast") {
-      // Slice 1: the only way in is the staff waiver (§5), which always needs a note.
-      if (!note?.trim()) throw new Invalid("waiving a deposit needs a note");
+      // Two ways in: the gateway confirmed the deposit (system), or the staff waiver (§5), which always needs a note.
+      if (opts.depositPaid) {
+        if (actor.kind !== "system") throw new Invalid("only the payment confirmation opens a broadcast on a paid deposit");
+      } else {
+        // The system cannot waive: without a paid deposit its move is illegal, as the waiver is staff-only.
+        if (actor.kind === "system") throw new IllegalTransition(from, to);
+        if (!note?.trim()) throw new Invalid("waiving a deposit needs a note");
+      }
       if (!opts.broadcastDays || opts.broadcastDays <= 0) throw new Invalid("opening a broadcast needs its length in days");
-      set.depositMode = "waived";
+      set.depositMode = opts.depositPaid ? "cashfree" : "waived";
       set.broadcastOpensAt = now;
       set.broadcastClosesAt = new Date(now.getTime() + opts.broadcastDays * DAY_MS);
     }
@@ -268,6 +276,10 @@ export function createRolesModule(db: DbOrTx, clock: Clock) {
     /** deposit_pending → broadcast with `deposit_mode = waived`. Always a staff actor and a note (§5). */
     waiveDeposit(roleId: string, actor: Actor, note: string, opts: { broadcastDays: number }) {
       return transition(roleId, "broadcast", actor, note, { broadcastDays: opts.broadcastDays });
+    },
+    /** deposit_pending → broadcast with `deposit_mode = cashfree`: the gateway confirmed the deposit. */
+    depositPaid(roleId: string, opts: { broadcastDays: number; note: string }) {
+      return transition(roleId, "broadcast", { kind: "system" }, opts.note, { broadcastDays: opts.broadcastDays, depositPaid: true });
     },
     /** Pushes `broadcast_closes_at` out by `days`. Once per role, and only while it is in broadcast (§5). */
     async extendBroadcast(roleId: string, days: number): Promise<Role> {

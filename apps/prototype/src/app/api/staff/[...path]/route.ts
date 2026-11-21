@@ -12,10 +12,17 @@ const ALLOWED = [
   /^\/associations$/,
   /^\/companies\/[^/]+\/merge$/,
   /^\/jobs\/[a-z_.]+\/run$/,
+  // Finance console; the API also requires user.is_finance.
+  /^\/payments$/,
+  /^\/payments\/reconcile$/,
+  /^\/payments\/roles\/[^/]+(\/settlements)?$/,
+  /^\/payments\/settlements\/[^/]+\/(cancel|retry|sync)$/,
+  /^\/payments\/orders\/[^/]+\/sync$/,
 ];
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
+  if (path.some((p) => p === "." || p === ".." || p === "")) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const target = "/" + path.map(encodeURIComponent).join("/");
   if (!ALLOWED.some((re) => re.test(target))) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (req.method !== "GET" && !sameOrigin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });

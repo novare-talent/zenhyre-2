@@ -3,12 +3,13 @@ import type { MatchActor } from "@zenhyre/matching";
 import { SYSTEM, type Actor, type Role } from "@zenhyre/roles";
 import { AppDeps } from "../context";
 import { inTx, roleContext, User, Wf } from "./tx";
+import { reverseFeeTx } from "./payments";
 
 /**
- * §9.2 didNotJoin, Slice 1: steps 4–5 only. Requires a `closing` role with a recorded hire whose joining is not yet
- * confirmed. The hired match moves to `did_not_join`; the role reopens to `shortlist_ready` with the hire cleared and
- * the shortlist clock reset, so the company can hire another shortlisted candidate. The ledger reversals that precede
- * these steps arrive in Slice 2.
+ * §9.2 didNotJoin. Requires a `closing` role with a recorded hire whose joining is not yet confirmed. First the money
+ * (`reverseFeeTx`: the applied deposit is held again, the unpaid fee voided, a paid fee alerted for a manual refund);
+ * then the hired match moves to `did_not_join` and the role reopens to `shortlist_ready` with the hire cleared and the
+ * shortlist clock reset, so the company can hire another shortlisted candidate.
  */
 /** The open `join_dispute` item on a match: there is one while the candidate's "I did not join" is unsettled (§9.2). */
 export async function openJoinDispute(w: Wf, matchId: string) {
@@ -22,6 +23,7 @@ export async function didNotJoinTx(w: Wf, input: { role: Role; user?: User; asSt
   const kind = input.asStaff ? "staff" : "company";
   const matchActor: MatchActor = input.user ? { kind, userId: input.user.id } : { kind: "system" };
   const roleActor: Actor = input.user ? { kind, userId: input.user.id } : SYSTEM;
+  await reverseFeeTx(w, role, role.hiredMatchId);
   const match = await w.m.matching.setStage(role.hiredMatchId, "did_not_join", matchActor, {}, roleContext(role));
   const reopened = await w.m.roles.reopen(role.id, roleActor, "hire did not join");
   // Whoever reversed the hire has also answered the candidate's dispute, if one was open.

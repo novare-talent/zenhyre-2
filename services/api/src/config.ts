@@ -4,6 +4,7 @@ import { ResendTransport, ConsoleTransport } from "@zenhyre/notify";
 import { fixtureGateModel } from "@zenhyre/gate";
 import type { AppConfig } from "./context";
 import { authFromEnv } from "./auth/fromEnv";
+import { gatewayFromEnv } from "./payments/fromEnv";
 
 /** The API's configuration from environment variables, shared by the long-running server and the Vercel function. */
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -26,5 +27,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
     baseUrl: env.APP_BASE_URL ?? "http://localhost:3000",
     webhookSecret: env.RESEND_WEBHOOK_SECRET,
     cronSecret: env.CRON_SECRET || undefined,
+    gateway: gatewayFromEnv(env),
+    paymentWebhookUrl: env.PAYMENT_WEBHOOK_URL || undefined,
+    orderExpiryMinutes: Number(env.CASHFREE_ORDER_EXPIRY_MINUTES || 60),
   };
 }

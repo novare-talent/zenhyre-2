@@ -74,7 +74,7 @@ describe("the interim scheduler (§18 cadence)", () => {
     expect(names.indexOf("role.join_grace")).toBeLessThan(names.indexOf("role.guarantee_expiry"));
     const ran: LastRun = Object.fromEntries(names.map((n) => [n, start.getTime()]));
     expect(dueJobs(new Date(start.getTime() + HOUR - 1), ran)).toEqual([]);
-    expect(dueJobs(new Date(start.getTime() + HOUR), ran)).toEqual(["role.close_broadcast", "role.terms_auto_release"]);
+    expect(dueJobs(new Date(start.getTime() + HOUR), ran)).toEqual(["role.close_broadcast", "role.terms_auto_release", "payment.reconcile"]);
     expect(dueJobs(new Date("2026-11-05T23:59:59Z"), ran).filter((n) => CADENCE[n] === "nightly")).toEqual([]);
     expect(dueJobs(new Date("2026-11-06T00:00:00Z"), ran)).toEqual(names);
   });

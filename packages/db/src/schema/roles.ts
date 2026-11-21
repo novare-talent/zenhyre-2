@@ -6,7 +6,7 @@ export const roleType = z2.enum("role_type", ["intern", "fresher", "experienced"
 /** §5. Open: draft, gated, terms_pending, deposit_pending, broadcast, shortlist_ready. Terminal: closed, withdrawn, rejected. */
 export const roleStatus = z2.enum("role_status", [
   "draft", "gated", "rejected", "terms_pending", "deposit_pending", "broadcast", "shortlist_ready", "closing", "closed", "withdrawn"]);
-export const depositMode = z2.enum("deposit_mode", ["razorpay", "waived"]);
+export const depositMode = z2.enum("deposit_mode", ["razorpay", "waived", "cashfree"]);
 export const gateStage = z2.enum("gate_stage", ["rules", "model", "human"]);
 export const gateOutcome = z2.enum("gate_outcome", ["accept", "reject", "needs_review"]);
 
@@ -41,7 +41,7 @@ export const role = z2.table("role", {
   feeTermsReleasedAt: timestamp("fee_terms_released_at", { withTimezone: true }),
   feeTermsAcceptedAt: timestamp("fee_terms_accepted_at", { withTimezone: true }),
   depositAmount: bigint("deposit_amount", { mode: "number" }),
-  /** Null until a deposit path is chosen. Slice 1 only ever writes `waived` (staff waiver); Slice 2 writes `razorpay` at acceptTerms. */
+  /** Null until a deposit path is chosen. `waived` by the staff waiver or a replacement role, `cashfree` once the deposit is paid. `razorpay` is unused. */
   depositMode: depositMode("deposit_mode"),
   depositOrderId: text("deposit_order_id"),
   refundOwed: bigint("refund_owed", { mode: "number" }),

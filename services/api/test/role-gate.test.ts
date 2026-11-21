@@ -134,7 +134,7 @@ describe("stage 3: human", () => {
       expect(items).toHaveLength(1);
       expect(items[0].payload.reason).toMatch(/No model pass is configured/);
     } finally { await bare.close(); }
-  });
+  }, 30_000); // builds and migrates a second database inside the test
   it("staff accept, optionally narrowing the reach; the item closes and the decision is audited", async () => {
     respond = () => ({ score: 92, suggested_reach: [iitb], concerns: [], reason: "Strong role." });
     const role = await submit({ campusReach: ["IITB", "IITD"] });
@@ -232,9 +232,10 @@ describe("fee terms (§7)", () => {
     expect(subjects(ceoEmail)).toContain("Fee terms ready: Platform engineer");
     expect((await body(await ceo(`/roles/${role.id}`))).role.feeTerms).toMatchObject({ kind: "percent", amount: 0.1 });
   });
-  it("prices the deposit by the number of campuses (§2)", async () => {
+  it("prices the deposit on the CTC offered (deposit.ctc_slabs), whatever the reach", async () => {
     await t.db.insert(schema.campus).values(Array.from({ length: 5 }, (_, i) => ({ name: `IIT Test ${i}`, shortCode: `IITT${i}`, emailDomains: [`t${i}.ac.in`] })));
-    const role = await submit({ campusReach: ["IITB", "IITD", "IITT0", "IITT1", "IITT2", "IITT3"] });
+    // Up to ₹32 LPA → the 30–40 LPA slab: ₹30,000 before GST. Six campuses change nothing.
+    const role = await submit({ campusReach: ["IITB", "IITD", "IITT0", "IITT1", "IITT2", "IITT3"], ctcMin: 2_500_000_00, ctcMax: 3_200_000_00 });
     await staff(`/admin/roles/${role.id}/release-terms`, post());
     expect((await body(await ceo(`/roles/${role.id}/terms/accept`, post()))).role).toMatchObject({ status: "deposit_pending", depositAmount: 3_000_000 });
   });

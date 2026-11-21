@@ -9,7 +9,8 @@ import { useRules } from "@/components/Rules";
 import { StageLamps } from "@/components/StageLamps";
 import { useNotify } from "@/components/Toasts";
 import { RoleTrack } from "@/components/Track";
-import type { CompanyRoleView, ShortlistRowView } from "@/lib/api-types";
+import type { CompanyRoleView, RolePaymentsView, ShortlistRowView } from "@/lib/api-types";
+import { BillingDialog, DepositSheet, FeeLines, PaymentHistory, usePayments } from "./Payments";
 import { ctcBand, dayOf, formatPaise, lpa, NEXT_STAGE, REJECTION_CATEGORIES, REJECTION_LABEL, SETTLED, STAGE_LABEL, type RejectionCategory } from "@/lib/rules";
 import { zh } from "@/lib/zh";
 import { useCompany } from "@/seats/company";
@@ -18,7 +19,9 @@ const lakhsToPaise = (v: string) => Math.round((Number(v) || 0) * 100_000 * 100)
 const describeTerms = (t: { kind: "flat" | "percent"; amount: number }) => t.kind === "flat" ? `${formatPaise(t.amount)} flat` : `${Math.round(t.amount * 100)}% of annual CTC`;
 const OPEN = ["draft", "gated", "terms_pending", "deposit_pending", "broadcast", "shortlist_ready"];
 
-export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null; shortlist: ShortlistRowView[] | null }) {
+export function RolePage({ role: r, shortlist, payments = null, returned = {}, email = "" }: {
+  role: CompanyRoleView | null; shortlist: ShortlistRowView[] | null; payments?: RolePaymentsView | null; returned?: { orderId?: string; pay?: string }; email?: string;
+}) {
   const rules = useRules();
   const router = useRouter();
   const notify = useNotify();
@@ -27,6 +30,7 @@ export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null;
   const [busy, setBusy] = useState(false);
   const title = r?.title ?? null;
   useEffect(() => { setTitle(title); return () => setTitle(null); }, [title, setTitle]);
+  const pay = usePayments(r ?? ({ id: "" } as CompanyRoleView), r ? payments : null, returned);
 
   if (!r) {
     return (
@@ -49,15 +53,10 @@ export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null;
     finally { setBusy(false); }
   };
   const hired = r.hiredMatchId ? shortlist?.find((m) => m.id === r.hiredMatchId) ?? null : null;
-  // A waived deposit was never paid, so nothing is held and nothing comes off the fee (§9.1; Slice 1 waives every deposit).
-  const held = r.depositMode === "razorpay" ? r.depositAmount ?? 0 : 0;
-  const fee = hired && r.feeTerms && hired.hiredCtc ? (() => {
-    const total = r.feeTerms.kind === "flat" ? r.feeTerms.amount : Math.round(hired.hiredCtc! * r.feeTerms.amount);
-    const applied = Math.min(held, total);
-    return { total, applied, outstanding: total - applied, refund: held - applied };
-  })() : null;
+  const b = payments?.balances;
   const depositState = r.depositAmount === null ? (OPEN.includes(r.status) ? "Set when you accept the terms" : "None")
-    : r.status === "deposit_pending" ? "Due now" : r.depositMode === "waived" ? "Waived by Novare" : fee ? "Applied to the fee" : "Held";
+    : r.status === "deposit_pending" ? "Due now" : r.depositMode === "waived" ? "Waived by Novare"
+    : !b ? "" : b.depositApplied > 0 ? "Applied to the fee" : b.depositHeld > 0 ? "Held" : b.depositRefunded > 0 ? "Refunded" : b.depositForfeited > 0 ? "Forfeited" : "Settled";
   const reach = codes(r.campusReach);
 
   return (
@@ -116,15 +115,7 @@ export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null;
             </div>
           </div>
         )}
-        {r.status === "deposit_pending" && (
-          <div className="sheet post">
-            <div className="sheet__head"><h3>Deposit</h3><span className="tag tag--lit">Due now</span></div>
-            <div className="sheet__pad" style={{ display: "grid", gap: "1.25rem" }}>
-              <p className="display t-l num">{r.depositAmount !== null ? formatPaise(r.depositAmount) : ""} for {r.campusReach.length} {r.campusReach.length === 1 ? "campus" : "campuses"}.</p>
-              <p className="small measure">Novare collects the deposit and switches the role on; it then stays open for {rules.broadcastDays} days. The deposit comes back if you work the shortlist and do not hire, and counts toward the fee if you do.</p>
-            </div>
-          </div>
-        )}
+        {r.status === "deposit_pending" && <DepositSheet payments={payments} ctl={pay} broadcastDays={rules.broadcastDays} />}
         {r.status === "broadcast" && (
           <div style={{ display: "grid", gap: "1.5rem" }}>
             <div className="note post">
@@ -177,27 +168,21 @@ export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null;
       </div>
 
       <aside className="work__side" aria-label="Role facts">
-        {fee && hired && (
+        {hired && (
           <div className="sheet post">
             <div className="sheet__head"><h3>Hire and fee</h3><span className="tag tag--lit">Hire recorded</span></div>
             <div className="sheet__pad">
               <p style={{ fontWeight: 700 }}>{hired.candidate?.name || "Hired candidate"}</p>
-              <p className="meta" style={{ marginBottom: "1rem" }}>Joins {dayOf(hired.joinedOn!)} at {lpa(hired.hiredCtc!)}</p>
-              <dl className="kv">
-                <dt>Fee, {describeTerms(r.feeTerms!)}</dt><dd className="num">{formatPaise(fee.total)}</dd>
-                {r.depositMode === "waived"
-                  ? <><dt>Deposit</dt><dd>Waived, so nothing to apply</dd></>
-                  : <><dt>Deposit applied</dt><dd className="num">minus {formatPaise(fee.applied)}</dd></>}
-                {fee.refund > 0 && <><dt>Deposit refunded</dt><dd className="num">{formatPaise(fee.refund)}</dd></>}
-                <div className="kv--total" style={{ display: "contents" }}><dt>To pay by {dayOf(hired.joinedOn!, rules.dueDaysAfterJoin)}</dt><dd className="num">{formatPaise(fee.outstanding)}</dd></div>
-              </dl>
-              <p className="meta" style={{ margin: "1rem 0" }}>Replacement guarantee runs to {dayOf(hired.joinedOn!, r.feeTerms!.replacement_guarantee_days)}. {hired.joinConfirmedAt ? "Joining is confirmed." : "We ask the candidate to confirm joining on the day."}</p>
+              <p className="meta" style={{ marginBottom: "1rem" }}>Joins {dayOf(hired.joinedOn!)} at {lpa(hired.hiredCtc!)}{r.feeTerms ? `. Fee: ${describeTerms(r.feeTerms)}` : ""}</p>
+              {payments ? <FeeLines payments={payments} ctl={pay} /> : <p className="meta">The fee details could not be loaded.</p>}
+              <p className="meta" style={{ margin: "1rem 0" }}>{r.feeTerms ? `The ${r.feeTerms.replacement_guarantee_days}-day replacement guarantee runs to ${dayOf(hired.joinedOn!, r.feeTerms.replacement_guarantee_days)}. ` : ""}{hired.joinConfirmedAt ? "Joining is confirmed." : "We ask the candidate to confirm joining on the day."}</p>
               {!hired.joinConfirmedAt
-                ? <button type="button" className="btn btn--sm btn--stop" disabled={busy} onClick={() => act(`/matches/${hired.id}/actions`, { stage: "did_not_join" }, "Noted. The fee is voided and the shortlist is open again.")}>Candidate did not join</button>
+                ? <button type="button" className="btn btn--sm btn--stop" disabled={busy} onClick={() => act(`/matches/${hired.id}/actions`, { stage: "did_not_join" }, "Noted. The fee is voided, the deposit is held again and the shortlist is open.")}>Candidate did not join</button>
                 : r.status === "closing" && <button type="button" className="btn btn--sm btn--stop" disabled={busy} onClick={() => { if (confirm("Record that the candidate left inside the guarantee? A replacement search starts at no extra fee.")) act(`/matches/${hired.id}/actions`, { stage: "left_early" }, "Replacement search started."); }}>Candidate left early</button>}
             </div>
           </div>
         )}
+        {payments && <PaymentHistory roleId={r.id} payments={payments} />}
         <div className="sheet post" style={{ "--i": 3 } as React.CSSProperties}>
           <div className="sheet__head"><h3>This role</h3><span className="meta">Posted {dayOf(r.createdAt)}</span></div>
           <div className="sheet__pad">
@@ -206,7 +191,7 @@ export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null;
               <dt>Pay</dt><dd>{ctcBand(r.type, r.ctcMin, r.ctcMax)}</dd>
               <dt>Where</dt><dd>{r.locations.join(", ") || "Not set"}</dd>
               <dt>Reach</dt><dd>{r.campusReach.length} of 23 <MiniBoard reach={reach} /></dd>
-              <dt>Deposit</dt><dd className="num">{r.depositAmount !== null ? `${formatPaise(r.depositAmount)}. ` : ""}{depositState}</dd>
+              <dt>Deposit</dt><dd className="num">{r.depositAmount !== null ? `${formatPaise(r.depositAmount)} + GST. ` : ""}{depositState}</dd>
               {r.feeTerms && <><dt>Fee on a hire</dt><dd>{describeTerms(r.feeTerms)}</dd></>}
               {r.gate && r.status !== "rejected" && <><dt>Gate</dt><dd style={{ fontWeight: 400 }}>{r.gate.outcome === "accept" ? `Accepted (${r.gate.stage === "human" ? "by a person" : "at the " + r.gate.stage + " pass"}).` : r.gate.reason}</dd></>}
             </dl>
@@ -214,6 +199,7 @@ export function RolePage({ role: r, shortlist }: { role: CompanyRoleView | null;
         </div>
       </aside>
 
+      <BillingDialog ctl={pay} initial={payments?.billing ?? null} defaultEmail={email} />
       <CandidatePanel role={r} match={shortlist?.find((m) => m.id === openId) ?? null} onClose={() => setOpenId(null)} act={act} busy={busy} />
     </div>
   );
@@ -308,7 +294,7 @@ function CandidatePanel({ role, match, onClose, act, busy }: { role: CompanyRole
                   <button type="submit" className="btn btn--ink" disabled={busy}>Record the hire<Arrow /></button>
                   <button type="button" className="btn btn--sm" disabled={busy} onClick={() => act(`/matches/${m.id}/actions`, { stage: "offer_reneged" }, "Noted: the candidate backed out.")}>Candidate backed out</button>
                 </div>
-                <p className="meta">Recording a hire raises the fee and applies your deposit to it. One hire per role.</p>
+                <p className="meta">Recording a hire raises the success fee plus GST and applies your deposit to it. One hire per role.</p>
               </form>
             )}
 

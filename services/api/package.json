@@ -7,8 +7,8 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
     "issue:association": "tsx src/scripts/issueAssociationAccess.ts",
     "build:vercel": "node scripts/build-vercel.mjs"
   },
@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "2.55.0",
     "@zenhyre/db": "workspace:*",
     "@zenhyre/gate": "workspace:*",
+    "@zenhyre/ledger": "workspace:*",
     "@zenhyre/identity": "workspace:*",
     "@zenhyre/matching": "workspace:*",
     "@zenhyre/notify": "workspace:*",

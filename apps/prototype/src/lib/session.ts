@@ -16,7 +16,7 @@ export const COOKIE = { session: "zh_session", refresh: "zh_refresh", exp: "zh_e
 const THIRTY_DAYS = 30 * 24 * 3600;
 
 export interface Me {
-  user: { id: string; isStaff: boolean };
+  user: { id: string; isStaff: boolean; isFinance?: boolean };
   emails: { email: string; isPrimary: boolean; verified: boolean }[];
   candidate: null | {
     gradDate: string; course: string; rollNumber: string | null; rollNumberFlag: boolean;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rulesFromConfig } from "../src/lib/config";
-import { defaultFeeTerms, depositFor, evaluateRules, feeFor, type RoleDraft } from "../src/lib/rules";
+import { defaultFeeTerms, depositFor, depositForCtc, evaluateRules, feeFor, slabIndexFor, type RoleDraft } from "../src/lib/rules";
 
 const rules = rulesFromConfig();
 const L = (lakhs: number) => lakhs * 100_000 * 100;
@@ -10,6 +10,20 @@ describe("rules mirror the spec", () => {
   it("prices the deposit by campus count (§2)", () => {
     expect([1, 5, 6, 12, 13, 23].map((n) => depositFor(rules, n))).toEqual([1_500_000, 1_500_000, 3_000_000, 3_000_000, 6_000_000, 6_000_000]);
     expect(depositFor(rules, 0)).toBe(0);
+  });
+  it("prices the deposit by the CTC offered, from the slabs in config (before GST)", () => {
+    const slabs = rules.depositCtcSlabs;
+    const R = (rupees: number) => rupees * 100;
+    expect(depositForCtc(slabs, L(4))).toBe(R(5_000)); // below 5 LPA takes the base slab
+    expect(depositForCtc(slabs, L(16))).toBe(R(15_000));
+    expect(depositForCtc(slabs, L(20))).toBe(R(20_000)); // 20 LPA → ₹20k (lower bound inclusive)
+    expect(depositForCtc(slabs, L(199))).toBe(R(150_000));
+    expect(depositForCtc(slabs, L(500))).toBe(R(200_000)); // 2 Cr and above
+    expect(depositForCtc(slabs, L(16), 2)).toBe(R(30_000)); // probation multiplier
+    expect(depositForCtc(slabs, null)).toBeNull();
+    expect(depositForCtc(slabs, 0)).toBeNull();
+    expect(slabIndexFor(slabs, L(20))).toBe(3);
+    expect(rules.gstRate).toBe(0.18);
   });
   it("prefills fee terms by role type and seniority (§7)", () => {
     expect(defaultFeeTerms(rules, "intern", 0)).toMatchObject({ kind: "flat", amount: 1_250_000 });

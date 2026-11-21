@@ -61,4 +61,4 @@ export async function proxy(req: NextRequest) {
 }
 
 // Everything except static assets and the sign-in steps themselves (they set the cookies).
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml|api/auth/start|api/auth/redeem|.*\\.(?:png|jpg|jpeg|svg|webp|woff2?)$).*)"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml|api/auth/start|api/auth/redeem|api/webhooks|.*\\.(?:png|jpg|jpeg|svg|webp|woff2?)$).*)"] };

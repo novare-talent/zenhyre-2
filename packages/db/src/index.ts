@@ -22,3 +22,13 @@ export function createDb(url = process.env.DATABASE_URL!): { db: Db; close: () =
 }
 
 export { schema };
+
+/**
+ * LISTEN on a Postgres channel with its own connection (long-running servers only; not through a transaction pooler).
+ * Returns a stop function.
+ */
+export async function listen(url: string, channel: string, onMessage: (payload: string) => void): Promise<() => Promise<void>> {
+  const client = postgres(url, { max: 1, onnotice: () => {} });
+  await client.listen(channel, onMessage);
+  return () => client.end();
+}

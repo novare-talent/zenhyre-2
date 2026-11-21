@@ -32,3 +32,40 @@ webhookRoutes.post("/webhooks/resend", async (c) => {
   }
   return c.json({ ok: true });
 });
+
+/**
+ * Cashfree payment and refund webhooks. Verified by signature over the raw body, stored once (a replay is a no-op), and
+ * treated as a hint: the order or refund is then re-read from Cashfree, which is the source of truth. Always 200 once
+ * stored, so Cashfree does not retry an event we have; processing errors are kept on the event and alerted.
+ */
+webhookRoutes.post("/webhooks/cashfree", async (c) => {
+  const { deps } = c.var;
+  const raw = await c.req.text();
+  const ok = deps.gateway.verifyWebhook(raw, c.req.header("x-webhook-timestamp") ?? "", c.req.header("x-webhook-signature") ?? "");
+  if (!ok) return c.json({ error: "bad signature" }, 401);
+  let payload: any;
+  try { payload = JSON.parse(raw); } catch { return c.json({ error: "invalid" }, 400); }
+  const type = String(payload?.type ?? "UNKNOWN");
+  const data = payload?.data ?? {};
+  const orderId: string | undefined = data.order?.order_id ?? data.refund?.order_id;
+  const refundId: string | undefined = data.refund?.refund_id;
+  const dedupeKey = [type, data.payment?.cf_payment_id ?? data.refund?.cf_refund_id ?? orderId ?? "", data.payment?.payment_status ?? data.refund?.refund_status ?? ""].join(":");
+  const stored = await deps.ledger.storeWebhook({ provider: deps.gateway.provider, eventType: type, dedupeKey, payload });
+  if (!stored) return c.json({ ok: true, duplicate: true });
+  let error: string | null = null;
+  try {
+    if (type.startsWith("REFUND") && refundId) {
+      const { syncSettlement } = await import("../workflows/payments");
+      await syncSettlement(deps, refundId);
+    } else if (type.startsWith("PAYMENT") && orderId && await deps.ledger.order(orderId)) {
+      const { syncOrder } = await import("../workflows/payments");
+      await syncOrder(deps, orderId);
+    }
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+    console.error("[webhooks] cashfree event failed:", err);
+    await deps.ops.openReview({ kind: "alert", refType: "payment_webhook", refId: stored.id, associationId: null, payload: { reason: `webhook ${type}: ${error}`.slice(0, 500) } }).catch(() => {});
+  }
+  await deps.ledger.markWebhook(stored.id, error);
+  return c.json({ ok: true });
+});

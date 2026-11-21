@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertValidFeeTerms, depositFor, feeFor, prefillFeeTerms, type FeeConfig } from "../src/index";
+import { assertValidFeeTerms, depositFor, depositForCtc, feeFor, prefillFeeTerms, type FeeConfig } from "../src/index";
 
 // Defaults from spec §17.
 const fee: FeeConfig = { internFlat: 1_250_000, percentDefault: 0.10, percentSenior: 0.20, seniorYears: 10, replacementDays: 90 };
@@ -51,5 +51,19 @@ describe("deposit pricing by campus count (§2, §9.1)", () => {
   });
   it("does not depend on the order tiers are stored in", () => {
     expect(depositFor([...tiers].reverse(), 3)).toBe(1_500_000);
+  });
+});
+
+describe("depositForCtc (deposit.ctc_slabs)", () => {
+  const LPA = 100_000 * 100;
+  const slabs = [{ ctc_from: 0, ctc_to: 10 * LPA, amount: 500_000 }, { ctc_from: 10 * LPA, ctc_to: 20 * LPA, amount: 1_000_000 },
+    { ctc_from: 20 * LPA, ctc_to: null, amount: 2_000_000 }];
+  it("takes the slab holding the CTC: from inclusive, to exclusive, the last open-ended", () => {
+    expect([5, 9.99, 10, 19.99, 20, 200].map((l) => depositForCtc(slabs, Math.round(l * LPA)))).toEqual([500_000, 500_000, 1_000_000, 1_000_000, 2_000_000, 2_000_000]);
+  });
+  it("applies the probation multiplier and needs a CTC", () => {
+    expect(depositForCtc(slabs, 12 * LPA, 2)).toBe(2_000_000);
+    expect(depositForCtc(slabs, null)).toBeNull();
+    expect(depositForCtc([], 12 * LPA)).toBeNull();
   });
 });

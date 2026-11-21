@@ -18,7 +18,7 @@ function Next({ r }: { r: CompanyRoleView }) {
     case "terms_pending": return r.feeTerms
       ? <><span className="tag tag--lit">Terms to accept</span><span className="small">Released by Novare</span></>
       : <><span className="tag">Accepted</span><span className="small">Terms on their way</span></>;
-    case "deposit_pending": return <><span className="tag">Deposit</span><span className="small">{r.depositAmount !== null ? formatPaise(r.depositAmount) : ""} with Novare</span></>;
+    case "deposit_pending": return <><span className="tag">Deposit</span><span className="small">{r.depositAmount !== null ? `${formatPaise(r.depositAmount)} + GST` : ""} to pay</span></>;
     case "broadcast": return <><span className="tag tag--ink">On the board</span><span className="small">{r.broadcastClosesAt ? <Countdown until={r.broadcastClosesAt} /> : null}</span></>;
     case "shortlist_ready": return <><span className="tag tag--lit">Shortlist ready</span><span className="small">{Math.min(r.applicants, r.shortlistCap)} candidates to review</span></>;
     case "closing": return <><span className="tag tag--lit">Hire recorded</span><span className="small">Fee and joining on the role page</span></>;
@@ -29,8 +29,8 @@ function Next({ r }: { r: CompanyRoleView }) {
 export function Roles({ roles }: { roles: CompanyRoleView[] }) {
   const { codes } = useCompany();
   const live = roles.filter((r) => ["broadcast", "shortlist_ready", "closing"].includes(r.status) && r.depositAmount);
-  // Only a paid deposit is held. A waived one (every deposit in Slice 1) was never collected.
-  const held = live.filter((r) => r.depositMode === "razorpay");
+  // Only a paid deposit is held. A waived one was never collected.
+  const held = live.filter((r) => r.depositMode === "cashfree" && !r.hiredMatchId);
   const waived = live.filter((r) => r.depositMode === "waived");
   const owed = roles.filter((r) => r.status === "deposit_pending" && r.depositAmount);
 
@@ -68,13 +68,13 @@ export function Roles({ roles }: { roles: CompanyRoleView[] }) {
           <div className="sheet__pad">
             {held.length + owed.length + waived.length === 0 ? <p className="small">Nothing held. A deposit is set when you accept a role's terms.</p> : (
               <dl className="kv">
-                {owed.map((r) => <div key={r.id} style={{ display: "contents" }}><dt>{r.title} (due)</dt><dd className="num">{formatPaise(r.depositAmount!)}</dd></div>)}
+                {owed.map((r) => <div key={r.id} style={{ display: "contents" }}><dt>{r.title} (due, + GST)</dt><dd className="num">{formatPaise(r.depositAmount!)}</dd></div>)}
                 {held.map((r) => <div key={r.id} style={{ display: "contents" }}><dt>{r.title}</dt><dd className="num">{formatPaise(r.depositAmount!)}</dd></div>)}
                 {waived.map((r) => <div key={r.id} style={{ display: "contents" }}><dt>{r.title}</dt><dd>Waived by Novare</dd></div>)}
                 <div className="kv--total" style={{ display: "contents" }}><dt>Held now</dt><dd className="num">{formatPaise(held.reduce((s, r) => s + (r.depositAmount ?? 0), 0))}</dd></div>
               </dl>
             )}
-            <p className="meta" style={{ marginTop: "1rem" }}>A deposit belongs to one role. It is refunded, applied to the fee on a hire, or forfeited only if the shortlist is ignored. It is never a balance you top up.</p>
+            <p className="meta" style={{ marginTop: "1rem" }}>A deposit belongs to one role and is paid before it goes live. It is applied to the fee on a hire, or refunded less gateway charges if the role ends with no hire. It is never a balance you top up.</p>
           </div>
         </div>
       </aside>
